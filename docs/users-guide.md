@@ -1,9 +1,20 @@
-# User Guide
+# User guide
 
-This guide explains how to use the generated Evert project after rendering it
-from the template.
+Evert is currently in the design and compiler-foundation stage. The repository
+does not yet provide a usable Evert compiler command. The current user-facing
+surface is the project documentation and the validation commands that keep that
+documentation and starter Rust package healthy.
 
-## Generated Tooling
+## Where to start
+
+- Read [terms of reference](terms-of-reference.md) for the problem Evert is
+  intended to solve.
+- Read [Evert context](context.md) for the language and compiler terminology.
+- Read [Evert design](evert-design.md) for the proposed language semantics,
+  compiler architecture, and implementation boundaries.
+- Read [roadmap](roadmap.md) for the planned implementation order.
+
+## Current tooling
 
 Generated projects use Rust 2024, a pinned nightly toolchain, strict lint
 settings, and documented starter code. Library projects render `src/lib.rs`.
@@ -13,7 +24,7 @@ Application projects render `src/main.rs`, `src/lib.rs`, release automation, and
 See the [developers' guide](developers-guide.md) for local build tooling,
 including the default build configuration and platform linker details.
 
-## Makefile Targets
+## Makefile targets
 
 The generated `Makefile` exposes these public targets:
 
