@@ -326,63 +326,57 @@ viable but is the de-facto idiom for building a modern Rust-hosted compiler.
 ### 0.2.1 Technology Research
 
 **Lexing with Logos.** Logos is a derive-driven lexer generator whose stated
-goals are <cite index="1-6,1-7">to make it easy to create a Lexer, so you can
-focus on more complex problems, and to make the generated Lexer faster than
-anything you'd write by hand.</cite> It achieves this because it <cite
-index="1-8,1-9,1-10,1-11,1-12">combines all token definitions into a single
+goals are to make it easy to create a Lexer, so you can focus on more complex
+problems, and to make the generated Lexer faster than anything you'd write by
+hand. It achieves this because it combines all token definitions into a single
 deterministic state machine, optimizes branches into lookup tables or jump
 tables, prevents backtracking inside token definitions, unwinds loops and
 batches reads to minimize bounds checking, and does all of that heavy lifting
-at compile time.</cite> The current line emits tokens as a `Result`: <cite
-index="2-1">the Lexer produces a Result<Token, Token::Error> which removes the
-need for the #[error] variant,</cite> and whitespace/trivia are declared with
-the <cite index="2-6">#[logos(skip …)] attribute.</cite> This directly
-supports FR-1 (spanned tokens) and the trivia-retention requirement.
+at compile time. The current line emits tokens as a `Result`: the Lexer
+produces a Result<Token, Token::Error> which removes the need for the #[error]
+variant, and whitespace/trivia are declared with the #[logos(skip …)]
+attribute. This directly supports FR-1 (spanned tokens) and the
+trivia-retention requirement.
 
-**Parsing with Chumsky.** Chumsky is <cite index="16-1">a parser library for
-Rust that makes writing expressive, high-performance parsers easy.</cite>
-Critically for Evert's peglet notation and its layout-sensitive grammar, <cite
-index="16-9,16-10,16-11">Chumsky's parsers are recursive descent parsers and
-are capable of parsing parsing expression grammars (PEGs), which includes all
-known context-free languages; it also supports context-sensitive grammars via a
-set of dedicated combinators that integrate cleanly with the rest of the
-library, allowing it to parse syntaxes like Rust-style raw strings and
-Python-style semantic indentation.</cite> Its error-recovery model matches
-FR-3: <cite index="16-12">it can encounter a syntax error, report the error,
-and then attempt to recover into a state in which it can continue parsing so
-that multiple errors can be produced at once and a partial AST can still be
-generated from the input for future compilation stages to consume.</cite> The
-modern Chumsky line is the "zero-copy" rewrite, which added <cite
-index="15-18">support for parsing context-sensitive grammars such as
-Python-style indentation, support for manipulating shared state during parsing
-(allowing arena allocators, cstrees, and interners), and a new IterParser
-trait.</cite>
+**Parsing with Chumsky.** Chumsky is a parser library for Rust that makes
+writing expressive, high-performance parsers easy. Critically for Evert's
+peglet notation and its layout-sensitive grammar, Chumsky's parsers are
+recursive descent parsers and are capable of parsing parsing expression
+grammars (PEGs), which includes all known context-free languages; it also
+supports context-sensitive grammars via a set of dedicated combinators that
+integrate cleanly with the rest of the library, allowing it to parse syntaxes
+like Rust-style raw strings and Python-style semantic indentation. Its
+error-recovery model matches FR-3: it can encounter a syntax error, report the
+error, and then attempt to recover into a state in which it can continue
+parsing so that multiple errors can be produced at once and a partial AST can
+still be generated from the input for future compilation stages to consume. The
+modern Chumsky line is the "zero-copy" rewrite, which added support for parsing
+context-sensitive grammars such as Python-style indentation, support for
+manipulating shared state during parsing (allowing arena allocators, cstrees,
+and interners), and a new IterParser trait.
 
 **Diagnostics with Ariadne.** Both Logos's and Chumsky's examples render errors
-through Ariadne — <cite index="16-2">error diagnostic rendering in the
-canonical example is performed by Ariadne</cite> — which satisfies the
-first-class diagnostics non-functional requirement and the FR-16 "source-level,
-human-first" mandate.
+through Ariadne — error diagnostic rendering in the canonical example is
+performed by Ariadne — which satisfies the first-class diagnostics
+non-functional requirement and the FR-16 "source-level, human-first" mandate.
 
-**Incremental computation with Salsa.** Salsa is <cite index="23-1,23-2">a
-library for incremental recomputation, meaning it allows reusing computations
-that were already done in the past to increase the efficiency of future
-computations.</cite> Its proven pedigree is decisive: <cite
-index="21-2,21-3">the goal of Salsa is to support efficient incremental
+**Incremental computation with Salsa.** Salsa is a library for incremental
+recomputation, meaning it allows reusing computations that were already done in
+the past to increase the efficiency of future computations. Its proven pedigree
+is decisive: the goal of Salsa is to support efficient incremental
 recomputation, and Salsa is used in rust-analyzer, for example, to help it
-recompile your program quickly as you type.</cite> The modern API models the
-compiler as inputs and tracked functions: <cite index="21-23,21-24,21-25">every
-Salsa program begins with an input — special structs that define the starting
-point of your program — and everything else is ultimately a deterministic
-function of these inputs.</cite>
+recompile your program quickly as you type. The modern API models the compiler
+as inputs and tracked functions: every Salsa program begins with an input —
+special structs that define the starting point of your program — and everything
+else is ultimately a deterministic function of these inputs.
 
-**Code generation with LLVM via Inkwell.** Inkwell <cite
-index="27-1,27-2,27-3">aims to help you pen your own programming languages by
-safely wrapping llvm-sys; it provides a more strongly typed interface than the
-underlying LLVM C API so that certain types of errors can be caught at compile
-time instead of at LLVM's runtime, replicating LLVM IR's strong typing as
-closely as possible.</cite> This is the embedded path for the deferred backend,
-with the textual-IR path used first for golden testing.
+**Code generation with LLVM via Inkwell.** Inkwell aims to help you pen your
+own programming languages by safely wrapping llvm-sys; it provides a more
+strongly typed interface than the underlying LLVM C API so that certain types
+of errors can be caught at compile time instead of at LLVM's runtime,
+replicating LLVM IR's strong typing as closely as possible. This is the
+embedded path for the deferred backend, with the textual-IR path used first for
+golden testing.
 
 ### 0.2.2 Architecture Pattern Research
 
@@ -391,30 +385,30 @@ The dominant production pattern for a Rust-hosted compiler front end is a
 strict separation of syntax from semantics**, as embodied by rust-analyzer.
 Research confirms the key structural choices Evert should adopt:
 
-- **Separation of syntax and semantics.** In rust-analyzer, <cite
-  index="26-27">the syntax layer provides a lossless CST/AST, while HIR
-  provides semantic information.</cite> Evert mirrors this with `evert_syntax`
+- **Separation of syntax and semantics.** In rust-analyzer, the syntax layer
+  provides a lossless CST/AST, while HIR
+  provides semantic information. Evert mirrors this with `evert_syntax`
   (lossless CST) feeding `evert_hir` (resolved, desugared semantics).
-- **Lossless concrete syntax trees.** rust-analyzer's parser <cite
-  index="26-22,26-23">produces a tree that includes all whitespace and
+- **Lossless concrete syntax trees.** rust-analyzer's parser produces a tree
+  that includes all whitespace and
   comments, enabling perfect round-tripping, using the rowan library for
-  immutable, thread-safe syntax trees.</cite> This validates Evert's CST-first
-  grammar contract (ECLP-0002) and is the basis for formatting and IDE support.
-- **Salsa-powered incrementality across the whole pipeline.** <cite
-  index="26-1">All analysis queries use the Salsa framework for automatic
-  caching and invalidation.</cite> Evert's query graph follows the same shape.
+  immutable, thread-safe syntax trees. This validates Evert's CST-first grammar
+  contract (ECLP-0002) and is the basis for formatting and IDE support.
+- **Salsa-powered incrementality across the whole pipeline.** All analysis
+  queries use the Salsa framework for automatic
+  caching and invalidation. Evert's query graph follows the same shape.
 - **Early-cutoff optimization.** A central reason to keep positions out of the
-  AST is that <cite index="22-30,22-31,22-32">changing the input source code to
-  include an extra whitespace does not change the AST structure; early cutoff
-  takes advantage of that and re-uses results which depend on the AST but not
-  on the original source file, so AST computation "shields" the code higher in
-  the stack from changes in the source code.</cite> This is the technical
-  justification for the user's rule that durable Salsa data uses byte spans
-  rather than borrowed source slices, and it informs how spans are stored.
-- **Durability layering.** Salsa divides queries into <cite index="22-34">more
-  durable and more volatile, letting Salsa optimize accordingly</cite> —
-  relevant to marking the Evert standard library and prelude as high-durability
-  inputs so user edits do not invalidate prelude analysis.
+  AST is that changing the input source code to include an extra whitespace
+  does not change the AST structure; early cutoff takes advantage of that and
+  re-uses results which depend on the AST but not on the original source file,
+  so AST computation "shields" the code higher in the stack from changes in the
+  source code. This is the technical justification for the user's rule that
+  durable Salsa data uses byte spans rather than borrowed source slices, and it
+  informs how spans are stored.
+- **Durability layering.** Salsa divides queries into more
+  durable and more volatile, letting Salsa optimize accordingly — relevant to
+  marking the Evert standard library and prelude as high-durability inputs so
+  user edits do not invalidate prelude analysis.
 
 Anti-patterns identified to avoid: storing borrowed lexer lifetimes or LLVM
 mutable objects inside the incremental database (which would poison
@@ -428,27 +422,26 @@ per the user's directives and are reflected in the architecture.
 This sub-section records the latest stable versions and the compatibility
 matrix that constrains the workspace.
 
-| Component      | Verified version / constraint         | Notes for Evert                                                                                                                                                                                                                 |
-| -------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Logos          | 0.16.x (latest 0.16.1)                | <cite index="9-1,9-2">Logos 0.16 rewrites the lexer engine, prioritizing correctness and robust regex support, and the Minimum Supported Rust Version (MSRV) has been bumped to 1.80 to leverage features like LazyLock.</cite> |
-| Chumsky        | 0.11.x (zero-copy line; 1.0 in alpha) | Modern context-sensitive + error-recovery API; pairs with Ariadne.                                                                                                                                                              |
-| Ariadne        | ~0.4 (per Logos dev-deps)             | Diagnostic rendering; Logos's own dev-dependencies pin `ariadne ^0.4` and `chumsky ^0.10.0`, confirming first-class integration of the three.                                                                                   |
-| Salsa          | Modern macro framework, pre-1.0       | Proven in rust-analyzer; uses `#[salsa::input]`/`#[salsa::tracked]`, interning, and durability.                                                                                                                                 |
-| Inkwell        | 0.8.x                                 | Backend binding (deferred).                                                                                                                                                                                                     |
-| LLVM           | 11–22 (pin one major)                 | Coupled to Inkwell feature flag.                                                                                                                                                                                                |
-| Rust toolchain | 2024 edition, ≥ 1.85                  | Required by Inkwell 0.8.                                                                                                                                                                                                        |
+| Component      | Verified version / constraint         | Notes for Evert                                                                                                                                                                                    |
+| -------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Logos          | 0.16.x (latest 0.16.1)                | Logos 0.16 rewrites the lexer engine, prioritizing correctness and robust regex support, and the Minimum Supported Rust Version (MSRV) has been bumped to 1.80 to leverage features like LazyLock. |
+| Chumsky        | 0.11.x (zero-copy line; 1.0 in alpha) | Modern context-sensitive + error-recovery API; pairs with Ariadne.                                                                                                                                 |
+| Ariadne        | ~0.4 (per Logos dev-deps)             | Diagnostic rendering; Logos's own dev-dependencies pin `ariadne ^0.4` and `chumsky ^0.10.0`, confirming first-class integration of the three.                                                      |
+| Salsa          | Modern macro framework, pre-1.0       | Proven in rust-analyzer; uses `#[salsa::input]`/`#[salsa::tracked]`, interning, and durability.                                                                                                    |
+| Inkwell        | 0.8.x                                 | Backend binding (deferred).                                                                                                                                                                        |
+| LLVM           | 11–22 (pin one major)                 | Coupled to Inkwell feature flag.                                                                                                                                                                   |
+| Rust toolchain | 2024 edition, ≥ 1.85                  | Required by Inkwell 0.8.                                                                                                                                                                           |
 
-The binding constraint is the LLVM toolchain coupling. Inkwell requires <cite
-index="27-5">Rust 1.85+ and one of LLVM 11–22, selected by pointing Cargo.toml
-to a single LLVM version feature flag of the form llvmM-0 where M corresponds
-to the LLVM major version.</cite> Because <cite index="31-2">you must have LLVM
-installed on your system and specify the version in your Cargo.toml
-dependencies,</cite> the LLVM backend is gated behind an optional Cargo feature
-so the front end and interpreter build with no native dependency — reinforcing
-the interpreter-first plan. Inkwell remains pre-1.0, and the maintainers note
-they <cite index="27-6">may make breaking changes on master from time to time
-since they are pre-v1.0.0, in compliance with semver,</cite> so the dependency
-is pinned to an exact minor version.
+The binding constraint is the LLVM toolchain coupling. Inkwell requires Rust
+1.85+ and one of LLVM 11–22, selected by pointing Cargo.toml to a single LLVM
+version feature flag of the form llvmM-0 where M corresponds to the LLVM major
+version. Because you must have LLVM installed on your system and specify the
+version in your Cargo.toml dependencies, the LLVM backend is gated behind an
+optional Cargo feature so the front end and interpreter build with no native
+dependency — reinforcing the interpreter-first plan. Inkwell remains pre-1.0,
+and the maintainers note they may make breaking changes on master from time to
+time since they are pre-v1.0.0, in compliance with semver, so the dependency is
+pinned to an exact minor version.
 
 **Supporting crates** selected to satisfy the implicit compiler-domain
 requirements: `la-arena` (arena allocation with stable indices), `lasso` or
