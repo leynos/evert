@@ -23,6 +23,8 @@ compact and omits build output such as `target/`.
 │   ├── adr-001-query-based-compiler-workspace.md
 │   ├── adr-002-interpreter-first-backend-boundary.md
 │   ├── adr-003-local-power-language-semantics.md
+│   ├── adr-004-effect-interface-sealing-gate.md
+│   ├── adr-005-capability-authority-staging.md
 │   ├── contents.md
 │   ├── context.md
 │   ├── developers-guide.md

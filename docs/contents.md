@@ -37,6 +37,12 @@ set.
 - [ADR 003: Local-power language semantics](adr-003-local-power-language-semantics.md)
   records the initial semantic rule that power must be local, explicit, and
   non-contagious.
+- [ADR 004: Effect-interface sealing gate](adr-004-effect-interface-sealing-gate.md)
+  makes signature restriction or effect-interface sealing an early design gate
+  before effect polymorphism broadens.
+- [ADR 005: Capability authority staging](adr-005-capability-authority-staging.md)
+  splits resource values from authority capabilities and stages host authority
+  after the first effect slice.
 
 ## Reference inputs
 
