@@ -6,7 +6,9 @@
 - **Companion documents:** `docs/context.md`, `docs/evert-design.md`,
   `docs/roadmap.md`, `docs/adr-001-query-based-compiler-workspace.md`,
   `docs/adr-002-interpreter-first-backend-boundary.md`, and
-  `docs/adr-003-local-power-language-semantics.md`.
+  `docs/adr-003-local-power-language-semantics.md`,
+  `docs/adr-004-effect-interface-sealing-gate.md`, and
+  `docs/adr-005-capability-authority-staging.md`.
 - **Last substantive revision:** 2026-06-27.
 
 ## 1. Background and motivation
@@ -113,8 +115,9 @@ whole programme around one abstraction.
 - Build a Rust-hosted reference compiler with a lossless front end,
   query-based semantic analysis, typed Core IR, and interpreter-first execution.
 - Enforce the first semantic invariants: empty effect rows for `pure fn`,
-  pure-only laziness, exhaustive closed-pattern matching, coherent trait
-  instances, and non-escaping local mutation.
+  pure-only laziness, row soundness for `Throw<E>` and `Console`, exhaustive
+  closed-pattern matching, coherent trait instances, and non-escaping local
+  mutation.
 - Deliver human-first diagnostics as a language feature, not as an afterthought.
 - Keep native code generation behind a narrow backend boundary until the
   interpreter has become the semantic oracle.
@@ -193,8 +196,8 @@ clear parser/specification boundary.
 | Question                                                                       | Why it matters                                                                                                    | Resolution criteria                                                                                                               | Suggested path                                                                     |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | Which ECLPs are accepted, draft, or deferred after the first split?            | The roadmap depends on the MVP specification boundary.                                                            | Each ECLP file has a status, dependencies, and a conformance expectation.                                                         | Split and review the corpus before implementing language features.                 |
-| What is the exact MVP effect set?                                              | It determines interpreter host capabilities and diagnostics.                                                      | A design note or ADR names the first effects and handler policies.                                                                | Start with `Console`, `Clock`, and `Throw<E>` unless evidence changes the slice.   |
-| Do polymorphic effects need signature restriction or effect-interface sealing? | Open effect interfaces can make abstraction leaks hard to diagnose.                                               | Row soundness and capability non-escape tests either pass without a restriction or an ADR introduces one.                         | Defer until the first row-polymorphic fixtures exist.                              |
+| When does `Clock` enter the executable effect set?                             | Time introduces non-determinism and capability authority earlier than the first semantic proof needs it.          | ADR 005's authority model has fixtures for hidden authority, handler-provided authority, and deterministic test hosts.            | Keep the first executable effect set to `Throw<E>` and `Console`.                  |
+| Do polymorphic effects need signature restriction or effect-interface sealing? | Open effect interfaces can make abstraction leaks hard to diagnose.                                               | Row soundness and capability non-escape tests either pass without a restriction or an ADR introduces one.                         | Use ADR 004 as the early gate before broadening effect polymorphism.               |
 | Does executable local mutation belong in the first interpreter release?        | ST-style mutation is central but proof-heavy, and effects plus laziness already validate the first semantic loop. | The roadmap either accepts an executable `mutate` slice with heap-independence tests or defers it with static rejection fixtures. | Stage after handlers and pure laziness unless an ECLP example requires it earlier. |
 | Which LLVM major version should the optional backend target?                   | Inkwell feature flags and CI images depend on one LLVM major.                                                     | One ADR pins the major and explains local installation expectations.                                                              | Defer until textual Core and interpreter tests are stable.                         |
 | What package manifest shape does Evert use?                                    | CLI commands, editions, module resolution, and project tests depend on it.                                        | A minimal manifest schema is documented and covered by parser tests.                                                              | Design after module resolution but before `evert build`.                           |
@@ -215,6 +218,9 @@ _Table 3: Open questions for the next design iteration._
 - Koka language site, <https://koka-lang.github.io/>, accessed 2026-06-27.
 - Daan Leijen, "Koka: Programming with Row Polymorphic Effect Types",
   <https://arxiv.org/abs/1406.2061>, accessed 2026-06-27.
+- Daan Leijen, "Algebraic Effects for Functional Programming",
+  <https://www.microsoft.com/en-us/research/wp-content/uploads/2016/08/algeff-tr-2016-v3.pdf>,
+  accessed 2026-06-27.
 - Daniel Hillerstrom and Sam Lindley, "Liberating Effects with Rows and
   Handlers", <https://dl.acm.org/doi/10.1145/2976022.2976033>, accessed
   2026-06-27.
@@ -234,3 +240,10 @@ _Table 3: Open questions for the next design iteration._
   accessed 2026-06-27.
 - OpenJDK JEP 505, "Structured Concurrency (Fifth Preview)",
   <https://openjdk.org/jeps/505>, accessed 2026-06-27.
+- Yi-An Chen and Yi-Ping You, "Structured Concurrency: A Review",
+  <https://dl.acm.org/doi/10.1145/3547276.3548519>, accessed 2026-06-27.
+- Gabriel Radanne, Hannes Saffrich, and Peter Thiemann, "Kindly Bent to Free
+  Us", <https://arxiv.org/abs/1908.09681>, accessed 2026-06-27.
+- A. Laura Voinea, Ornela Dardha, and Simon J. Gay, "Resource Sharing via
+  Capability-Based Multiparty Session Types",
+  <http://eprints.gla.ac.uk/202623/>, accessed 2026-06-27.

@@ -49,6 +49,8 @@ Adopt the local-power rule as a semantic invariant:
 - Effects are performed in direct style and interpreted by handlers.
 - Effects and handlers are the first hard local-power semantic surface after
   pure code.
+- The first executable effect set is `Throw<E>` and `Console`; `Clock` is
+  staged until the capability authority model has fixtures.
 - Monads remain available through traits and `do M { ... }`, but monads do not
   replace effect rows.
 - `lazy` creates a pure memoized thunk and rejects effectful expressions.
@@ -61,8 +63,10 @@ Adopt the local-power rule as a semantic invariant:
 ## Consequences
 
 - The type checker must solve type and effect constraints together.
-- Polymorphic effects may later need signature restriction or effect-interface
-  sealing if open effect interfaces leak abstraction.
+- ADR 004 makes signature restriction or effect-interface sealing an early
+  gate before open polymorphic effect interfaces broaden.
+- ADR 005 keeps capability-bearing effects out of the first executable effect
+  slice.
 - The interpreter must distinguish value-level failures, `Throw<E>`, handler
   resumption, and runtime panics.
 - The runtime must model thunk states and black-hole detection.
@@ -76,8 +80,12 @@ Adopt the local-power rule as a semantic invariant:
 
 - `docs/context.md`.
 - `docs/terms-of-reference.md`.
+- `docs/adr-004-effect-interface-sealing-gate.md`.
+- `docs/adr-005-capability-authority-staging.md`.
 - Daan Leijen, "Koka: Programming with Row Polymorphic Effect Types",
   <https://arxiv.org/abs/1406.2061>.
+- Daan Leijen, "Algebraic Effects for Functional Programming",
+  <https://www.microsoft.com/en-us/research/wp-content/uploads/2016/08/algeff-tr-2016-v3.pdf>.
 - Daniel Hillerstrom and Sam Lindley, "Liberating Effects with Rows and
   Handlers", <https://dl.acm.org/doi/10.1145/2976022.2976033>.
 - Gordon D. Plotkin and Matija Pretnar, "Handling Algebraic Effects",
