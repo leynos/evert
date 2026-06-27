@@ -1,8 +1,28 @@
-# Developer Guide
+# Developer guide
 
-This guide explains the contributor workflow for the generated Evert project.
+This guide explains the contributor workflow for Evert.
 
-## Local Workflow
+## Normative design sources
+
+Use these documents before adding or changing compiler behaviour:
+
+- [Terms of reference](terms-of-reference.md) defines the problem space, scope,
+  constraints, and success criteria.
+- [Evert context](context.md) defines the terms used by the language and
+  compiler documentation.
+- [Evert design](evert-design.md) defines the compiler architecture and initial
+  semantic contracts.
+- [Roadmap](roadmap.md) sequences work into testable phases, steps, and tasks.
+- [Repository layout](repository-layout.md) explains ownership boundaries for
+  source, tests, documentation, and automation.
+- The accepted ADRs in `docs/adr-*.md` record decisions that constrain
+  implementation work.
+
+When a change alters language semantics, compiler architecture, public command
+behaviour, or internal ownership boundaries, update the corresponding design,
+roadmap, ADR, guide, or layout document in the same change.
+
+## Local workflow
 
 Use `make all` as the public entrypoint for formatting, linting, and tests.
 `make lint` runs rustdoc, Clippy, and Whitaker. `make test` prefers
@@ -25,6 +45,17 @@ LLVM-compatible linker behaviour.
 
 Install `clang`, `lld`, `mold`, `python3`, and `cargo-audit` before running the
 full generated workflow locally on Linux.
+
+## Design workflow
+
+Treat `docs/references/` as historical input rather than normative
+specification. Promote decisions from those references into the terms of
+reference, design, roadmap, ECLP files, or ADRs before implementing them.
+
+Create implementation tasks from the roadmap. A task is ready when it names its
+design source, dependency, success condition, and relevant validation target.
+If implementation reveals a design mismatch, update the design before expanding
+the code to work around the mismatch.
 
 ### Security audit ignores
 
