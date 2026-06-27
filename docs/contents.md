@@ -5,6 +5,8 @@ set.
 
 ## Project guides
 
+- [Project README](../README.md) introduces Evert as a research project and
+  points visitors to the design spine.
 - [User guide](users-guide.md) explains Evert's current user-facing state and
   the public build and validation commands.
 - [Developer guide](developers-guide.md) explains the local workflow and
