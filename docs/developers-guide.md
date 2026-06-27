@@ -18,6 +18,11 @@ Use these documents before adding or changing compiler behaviour:
 - The accepted ADRs in `docs/adr-*.md` record decisions that constrain
   implementation work.
 
+The top-level [README](../README.md) is the visitor-facing research-project
+pitch. Keep it concise and link-oriented. Do not move normative semantics,
+roadmap detail, or ADR rationale into the README; promote those decisions to
+the documents above and point readers there.
+
 When a change alters language semantics, compiler architecture, public command
 behaviour, or internal ownership boundaries, update the corresponding design,
 roadmap, ADR, guide, or layout document in the same change.
