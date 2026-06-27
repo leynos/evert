@@ -98,8 +98,8 @@ compact and omits build output such as `target/`.
 - `LICENSE`: Records the project licence text.
 - `Makefile`: Provides the public build, lint, test, coverage, and
   documentation validation commands.
-- `README.md`: Introduces the project and gives the shortest useful
-  getting-started path.
+- `README.md`: Introduces Evert as a research project, links the design spine,
+  and gives visitors the shortest useful orientation path.
 - `clippy.toml`: Configures Clippy lint behaviour that is not expressed
   directly in `Cargo.toml`.
 - `codecov.yml`: Configures coverage reporting behaviour.
