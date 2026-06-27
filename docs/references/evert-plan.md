@@ -386,17 +386,17 @@ strict separation of syntax from semantics**, as embodied by rust-analyzer.
 Research confirms the key structural choices Evert should adopt:
 
 - **Separation of syntax and semantics.** In rust-analyzer, the syntax layer
-  provides a lossless CST/AST, while HIR
-  provides semantic information. Evert mirrors this with `evert_syntax`
-  (lossless CST) feeding `evert_hir` (resolved, desugared semantics).
+  provides a lossless CST/AST, while HIR provides semantic information. Evert
+  mirrors this with `evert_syntax` (lossless CST) feeding `evert_hir`
+  (resolved, desugared semantics).
 - **Lossless concrete syntax trees.** rust-analyzer's parser produces a tree
-  that includes all whitespace and
-  comments, enabling perfect round-tripping, using the rowan library for
-  immutable, thread-safe syntax trees. This validates Evert's CST-first grammar
-  contract (ECLP-0002) and is the basis for formatting and IDE support.
+  that includes all whitespace and comments, enabling perfect round-tripping,
+  using the rowan library for immutable, thread-safe syntax trees. This
+  validates Evert's CST-first grammar contract (ECLP-0002) and is the basis for
+  formatting and IDE support.
 - **Salsa-powered incrementality across the whole pipeline.** All analysis
-  queries use the Salsa framework for automatic
-  caching and invalidation. Evert's query graph follows the same shape.
+  queries use the Salsa framework for automatic caching and invalidation.
+  Evert's query graph follows the same shape.
 - **Early-cutoff optimization.** A central reason to keep positions out of the
   AST is that changing the input source code to include an extra whitespace
   does not change the AST structure; early cutoff takes advantage of that and
