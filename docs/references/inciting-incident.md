@@ -1,3 +1,5 @@
+# Inciting incident
+
 You: Please invent an inside-out Haskell that has monads, lazy evaluation,
 referential transparency, pure functions, and algebraic data types, but when
 you want them. And doesn't make you want to pound your head on a desk
@@ -856,7 +858,7 @@ generics, pointers and GPU programming, which makes it a useful foil for the
 “systems language without ritualized splinters” part of Evert.
 ([docs.modular.com](https://docs.modular.com/mojo/manual/))
 
-# ECLP-0000: The Evert Mission
+## ECLP-0000: The Evert Mission
 
 Status: Foundational Draft
 
@@ -907,7 +909,7 @@ The core tenets are:
 10. Diagnostics are part of the language design. A construct that cannot
     explain itself to a tired human at 01:43 does not deserve syntax.
 
-# ECLP-0001: ECLP Format
+## ECLP-0001: ECLP Format
 
 Status: Accepted for Drafting
 
@@ -930,7 +932,7 @@ Open Questions
 ECLPs are not feature requests. They are compact design decisions with enough
 grammar, semantics and examples to build against.
 
-# ECLP-0002: Surface Grammar Contract
+## ECLP-0002: Surface Grammar Contract
 
 Status: Foundational Draft
 
@@ -1037,7 +1039,7 @@ Evert grammar uses cuts after distinctive prefixes. That keeps diagnostics
 pinned to the construct the programmer actually started writing, rather than
 letting the parser wander off with a lantern and a false theory.
 
-# ECLP-0003: Mission-Level Syntax
+## ECLP-0003: Mission-Level Syntax
 
 Status: Draft
 
@@ -1085,7 +1087,7 @@ Evert does not use significant import side effects. Importing a module never
 runs arbitrary code. Modules may expose constants, functions, types, traits,
 effects, handlers, actors and protocol definitions, but not surprise goblins.
 
-# ECLP-0004: The Data Model
+## ECLP-0004: The Data Model
 
 Status: Foundational Draft
 
@@ -1180,7 +1182,7 @@ let updated =
     }
 ```
 
-# ECLP-0005: Type System, Kinds and Rows
+## ECLP-0005: Type System, Kinds and Rows
 
 Status: Foundational Draft
 
@@ -1280,7 +1282,7 @@ pure fn nowish permits no effects.
 
 No passive-aggressive type-variable thunderstorm. Just the problem.
 
-# ECLP-0006: Function Model
+## ECLP-0006: Function Model
 
 Status: Foundational Draft
 
@@ -1374,7 +1376,7 @@ should the compiler display inferred signatures during hover and require
 explicit effects whenever a function crosses a module boundary? Current answer:
 yes.
 
-# ECLP-0007: Blocks, Statements and Expressions
+## ECLP-0007: Blocks, Statements and Expressions
 
 Status: Draft
 
@@ -1439,7 +1441,7 @@ let message = {
 }
 ```
 
-# ECLP-0008: Algebraic Data Types and Pattern Matching
+## ECLP-0008: Algebraic Data Types and Pattern Matching
 
 Status: Foundational Draft
 
@@ -1505,7 +1507,7 @@ pure fn describe(result: Result<User, Error>) -> Text =
 Refutable patterns require `match`, `if let`, or `case`. `let Some(x) = maybe;`
 is illegal unless the type system proves totality.
 
-# ECLP-0009: Laziness
+## ECLP-0009: Laziness
 
 Status: Foundational Draft
 
@@ -1572,7 +1574,7 @@ A thunk may not contain observable effects.
 
 `lazy` is not `async`, not `defer`, not `IO wearing slippers`.
 
-# ECLP-0010: Monadicity
+## ECLP-0010: Monadicity
 
 Status: Draft
 
@@ -1665,7 +1667,7 @@ The two may lower to similar core forms.
 The source language does not confuse them.
 ```
 
-# ECLP-0011: Algebraic Effects and Handlers
+## ECLP-0011: Algebraic Effects and Handlers
 
 Status: Foundational Draft
 
@@ -1758,7 +1760,7 @@ Non-resumable effects are declared explicitly.
 Throw<E> is an effect, not an untyped exception chute.
 ```
 
-# ECLP-0012: Errors, Partiality and Contracts
+## ECLP-0012: Errors, Partiality and Contracts
 
 Status: Draft
 
@@ -1828,7 +1830,7 @@ xs[i]!          // explicit panic on out of bounds
 xs[i]?          // Result/Throw propagation
 ```
 
-# ECLP-0013: Local Mutation and Regions
+## ECLP-0013: Local Mutation and Regions
 
 Status: Foundational Draft
 
@@ -1886,7 +1888,7 @@ pure functions may contain mutate if the mutation is fully encapsulated.
 This steals the useful part of Haskell’s `ST`, then hides the ceremonial
 antlers.
 
-# ECLP-0014: Traits, Instances and Coherence
+## ECLP-0014: Traits, Instances and Coherence
 
 Status: Draft
 
@@ -1975,7 +1977,7 @@ Not:
 could not solve ?d_show_user in canonicalized obligation universe 3
 ```
 
-# ECLP-0015: Module and Package Architecture
+## ECLP-0015: Module and Package Architecture
 
 Status: Draft
 
@@ -2036,7 +2038,7 @@ export_item =
 No global constructors. No import-time database connections. No “why did
 importing the formatter start a web server?” incidents.
 
-# ECLP-0016: Ownership Without Lifetime Graffiti
+## ECLP-0016: Ownership Without Lifetime Graffiti
 
 Status: Foundational Draft
 
@@ -2105,7 +2107,7 @@ Unsafe Evert may use explicit regions and raw pointers.
 This is where Evert steals from Rust, then removes the part where your morning
 disappears into a variance diagram.
 
-# ECLP-0017: First-Class Concurrency
+## ECLP-0017: First-Class Concurrency
 
 Status: Foundational Draft
 
@@ -2219,7 +2221,7 @@ finalizers run during cancellation. This avoids Go’s orphan goroutine swamp,
 Rust async’s self-referential puzzle boxes, and Swift’s “is this actor method
 secretly reentrant now?” card trick.
 
-# ECLP-0018: Channels, Ports and Select
+## ECLP-0018: Channels, Ports and Select
 
 Status: Draft
 
@@ -2292,7 +2294,7 @@ Biased select must be written `select biased`.
 No silent global queues. No unbounded channels unless the programmer writes
 `unbounded` and accepts the goblin.
 
-# ECLP-0019: Actors and Protocols
+## ECLP-0019: Actors and Protocols
 
 Status: Draft
 
@@ -2403,7 +2405,7 @@ actor BankAccount {
 }
 ```
 
-# ECLP-0020: Capability Security
+## ECLP-0020: Capability Security
 
 Status: Draft
 
@@ -2445,7 +2447,7 @@ Handlers supply or transform authority.
 This gives Evert a security model that is not “please don’t import the spicy
 package”.
 
-# ECLP-0021: Unsafe, FFI and System Boundaries
+## ECLP-0021: Unsafe, FFI and System Boundaries
 
 Status: Draft
 
@@ -2507,7 +2509,7 @@ Unsafe APIs must state aliasing, lifetime and threading contracts.
 Safe wrappers must discharge those contracts.
 ```
 
-# ECLP-0022: Memory Model
+## ECLP-0022: Memory Model
 
 Status: Draft
 
@@ -2549,7 +2551,7 @@ counter.fetchAdd(1, ordering = Relaxed);
 Default safe concurrency never exposes memory orderings. If you are choosing
 `AcquireRelease`, you are already in the engine room wearing goggles.
 
-# ECLP-0023: Standard Prelude
+## ECLP-0023: Standard Prelude
 
 Status: Draft
 
@@ -2605,7 +2607,7 @@ use std.text.Text;
 use std.collections.Vector;
 ```
 
-# ECLP-0024: Metaprogramming Without Token Soup
+## ECLP-0024: Metaprogramming Without Token Soup
 
 Status: Wild Draft
 
@@ -2658,7 +2660,7 @@ let query =
 If the SQL is malformed, the diagnostic points into the string literal. Tiny
 parser lighthouse, now mounted inside a gemstone.
 
-# ECLP-0025: Layout, Formatting and Recovery
+## ECLP-0025: Layout, Formatting and Recovery
 
 Status: Draft
 
@@ -2719,7 +2721,7 @@ Not:
 expected token Ident while parsing generated_rule_74 after commitment
 ```
 
-# ECLP-0026: Compiler Core Language
+## ECLP-0026: Compiler Core Language
 
 Status: Implementation Draft
 
@@ -2805,7 +2807,7 @@ Option.flatMap(a, lambda x ->
 The monad and the effect system may share continuation machinery after
 lowering. Source users should not pay for that knowledge with forehead bruises.
 
-# ECLP-0027: The Concurrency Ownership Compact
+## ECLP-0027: The Concurrency Ownership Compact
 
 Status: Wild Draft
 
@@ -2877,7 +2879,7 @@ fn startDaemon(send cap: DetachedTaskCapability)
 
 That syntax should feel like opening a panel with a triangular screwdriver.
 
-# ECLP-0028: Effects Meet Concurrency
+## ECLP-0028: Effects Meet Concurrency
 
 Status: Wild Draft
 
@@ -2921,7 +2923,7 @@ handler BufferedConsole : Console {
 This avoids the hidden global logger problem and the “which task owns stdout?”
 swamp.
 
-# ECLP-0029: Editions and Compatibility
+## ECLP-0029: Editions and Compatibility
 
 Status: Draft
 
@@ -2963,7 +2965,7 @@ Language features have gates:
 No extension confetti by default. Evert should not require a spellbook of
 compiler flags before `hello world`.
 
-# ECLP-0030: What Evert Refuses
+## ECLP-0030: What Evert Refuses
 
 Status: Accepted as Attitude
 
@@ -2999,7 +3001,7 @@ FFI.
 Compiler plugins eventually, with a muzzle and paperwork.
 ```
 
-# A Tiny Unified Example
+## A Tiny Unified Example
 
 This pulls together the proposed model.
 
@@ -3056,7 +3058,7 @@ fn register() -> User
 }
 ```
 
-# The First Compiler Milestone Set
+## The First Compiler Milestone Set
 
 The minimal viable Evert should implement these in order:
 
@@ -3079,7 +3081,7 @@ M12 LLVM backend.
 The crucial move is to build an interpreter before LLVM. Otherwise every
 semantic bug will wear an optimiser moustache and deny everything.
 
-# Closing Design Note
+## Closing Design Note
 
 Evert’s north star is not “make Haskell easier” or “make Rust friendlier” or
 “make Go safer”. Those are useful shadows, but not the object.
