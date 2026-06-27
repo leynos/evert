@@ -1,19 +1,57 @@
 # Documentation contents
 
-[Documentation contents](contents.md) is the index for Evert's
-documentation set.
+[Documentation contents](contents.md) is the index for Evert's documentation
+set.
 
 ## Project guides
 
-- [User guide](users-guide.md) explains how to use the generated project and
-  its public build and test commands.
+- [Project README](../README.md) introduces Evert as a research project and
+  points visitors to the design spine.
+- [User guide](users-guide.md) explains Evert's current user-facing state and
+  the public build and validation commands.
 - [Developer guide](developers-guide.md) explains the local workflow and
   implementation tooling for contributors.
-- [Repository layout](repository-layout.md) explains the generated project's
+- [Repository layout](repository-layout.md) explains the repository's
   top-level files, directories, and ownership boundaries.
 - [Documentation style guide](documentation-style-guide.md) defines the
   spelling, structure, Markdown, Architecture Decision Record (ADR), Request
   for Comments (RFC), and roadmap conventions used by this documentation set.
+
+## Project definition
+
+- [Evert context](context.md) defines the core language, compiler, and
+  architecture terms used across the documentation set.
+- [Terms of reference](terms-of-reference.md) records the problem space,
+  stakeholders, scope, constraints, success criteria, and open questions before
+  implementation work starts.
+- [Evert design](evert-design.md) defines the initial language and compiler
+  architecture for the Rust reference implementation.
+- [Roadmap](roadmap.md) sequences design and implementation work into
+  testable phases, steps, and tasks.
+
+## Architecture decisions
+
+- [ADR 001: Query-based compiler workspace](adr-001-query-based-compiler-workspace.md)
+  selects a layered Rust workspace coordinated by a Salsa query database.
+- [ADR 002: Interpreter-first backend boundary](adr-002-interpreter-first-backend-boundary.md)
+  defers native code generation behind a backend port until the interpreter is
+  a working semantic oracle.
+- [ADR 003: Local-power language semantics](adr-003-local-power-language-semantics.md)
+  records the initial semantic rule that power must be local, explicit, and
+  non-contagious.
+- [ADR 004: Effect-interface sealing gate](adr-004-effect-interface-sealing-gate.md)
+  makes signature restriction or effect-interface sealing an early design gate
+  before effect polymorphism broadens.
+- [ADR 005: Capability authority staging](adr-005-capability-authority-staging.md)
+  splits resource values from authority capabilities and stages host authority
+  after the first effect slice.
+
+## Reference inputs
+
+- [Inciting incident](references/inciting-incident.md) preserves the original
+  product and language-design prompt that motivated Evert.
+- [Evert plan](references/evert-plan.md) preserves the proposed planning-tool
+  output used as non-binding design input.
 
 ## Rust reference material
 
