@@ -10,6 +10,8 @@
   `docs/roadmap.md`, `docs/adr-001-query-based-compiler-workspace.md`,
   `docs/adr-002-interpreter-first-backend-boundary.md`,
   `docs/adr-003-local-power-language-semantics.md`,
+  `docs/adr-004-effect-interface-sealing-gate.md`,
+  `docs/adr-005-capability-authority-staging.md`,
   `docs/references/inciting-incident.md`, and `docs/references/evert-plan.md`.
 - **Last substantive revision:** 2026-06-27.
 
@@ -59,6 +61,8 @@ corpus.
 - The MVP does not execute the complete structured-concurrency, actor,
   protocol, capability, unsafe foreign-function interface, or metaprogramming
   surface.
+- The MVP does not allow `lazy` to defer effectful work. Effectful deferral
+  belongs to future task or structured-concurrency constructs.
 - The language does not include subtyping, type-level computation, or quantum
   primitives in version one.
 
@@ -236,17 +240,21 @@ The first effect set should be small:
 
 - `Throw<E>` for typed early exit.
 - `Console` for examples and diagnostics.
-- `Clock` for a non-deterministic capability.
+
+`Clock` is specified but staged. It is the first candidate for a
+non-deterministic capability effect once ADR 005's authority model has
+conformance fixtures. It is not part of the first executable effect slice.
 
 Effects and handlers are the first hard semantic surface after pure code. The
 compiler must be able to show row soundness, handler preservation, and
 non-escape of effect capabilities before advanced ownership, task, or mutation
 execution features are treated as implementation promises.
 
-If unrestricted polymorphic effects make interfaces too open, Evert should add
-signature restriction or effect-interface sealing as a later ADR. That
-restriction is a safety valve, not part of the initial MVP unless row
-polymorphism fails the conformance fixtures.
+ADR 004 makes signature restriction or effect-interface sealing an early gate.
+The first checker may start without sealing, but Evert cannot broaden open
+polymorphic effect interfaces, capability-bearing effects, or general handler
+libraries until fixtures show that the current model is safe or a sealing ADR
+is accepted.
 
 The type checker must reject:
 
@@ -307,13 +315,22 @@ state, but callers observe a pure value.
 Local mutation is part of the language thesis, but it is stage-sensitive. The
 compiler should specify and test region non-escape before shipping execution
 semantics. The first interpreter slice may defer executable `mutate` if pure
-code, handlers, and pure laziness can validate the core thesis without it.
+code, handlers, and pure laziness can validate the core thesis without it. The
+parser may accept `mutate` early for source-fidelity and diagnostic value, but
+semantic checking should reject executable mutation until the non-escape and
+heap-independence gate is satisfied.
 
 ## 9. Core IR and lowering
 
 Core is the semantic contract between analysis and execution. It is small,
 typed, and deterministic to print. Surface syntax lowers to Core before the
 interpreter or backend sees it.
+
+Core needs a size budget, not just a pretty-printer. Representative fixtures
+must track Core node counts and type-annotation growth so typed IR does not
+become the hidden cost of the design. A Core change that preserves semantics
+but multiplies type representation size should fail review until the design
+explains the cost.
 
 Core forms include:
 
@@ -376,13 +393,13 @@ questions for later ADRs.
 
 ## 11. Ports and adapters
 
-| Port           | Owner                | Adapter examples                                   |
-| -------------- | -------------------- | -------------------------------------------------- |
-| Source loading | Compiler application | Filesystem source adapter, in-memory test adapter  |
-| Diagnostics    | Compiler application | Ariadne renderer, JSON renderer, snapshot renderer |
-| Execution host | Interpreter/runtime  | Console host, clock host, deterministic test host  |
-| Backend        | `evert_codegen_api`  | Textual LLVM adapter, Inkwell adapter              |
-| Package source | Driver/application   | Local manifest adapter, future registry adapter    |
+| Port           | Owner                | Adapter examples                                         |
+| -------------- | -------------------- | -------------------------------------------------------- |
+| Source loading | Compiler application | Filesystem source adapter, in-memory test adapter        |
+| Diagnostics    | Compiler application | Ariadne renderer, JSON renderer, snapshot renderer       |
+| Execution host | Interpreter/runtime  | Console host, deterministic test host, staged clock host |
+| Backend        | `evert_codegen_api`  | Textual LLVM adapter, Inkwell adapter                    |
+| Package source | Driver/application   | Local manifest adapter, future registry adapter          |
 
 _Table 3: Ports and adapters._
 
@@ -425,8 +442,9 @@ correctness for the MVP:
 | Coherence                           | Negative trait-instance fixtures                                                          | `evert_types`                                       |
 | Region escape and heap independence | Negative `mutate` fixtures and later logical or model-based checks for non-escaping cells | `evert_types`                                       |
 | Core determinism                    | Golden pretty-printer snapshots                                                           | `evert_core`, `evert_lower`                         |
+| Core size budget                    | Regression thresholds for node counts and type-annotation growth                          | `evert_core`, `evert_lower`                         |
 | Interpreter oracle                  | Golden execution results for ECLP examples                                                | `evert_interpreter`                                 |
-| Backend conformance                 | Later differential tests against interpreter output                                       | `evert_codegen_llvm`                                |
+| Backend conformance                 | Differential tests against interpreter output before native results are trusted           | `evert_codegen_llvm`                                |
 
 _Table 5: MVP correctness properties._
 
@@ -473,12 +491,10 @@ _Table 6: Design risks and mitigations._
 - Exact ECLP split, status, and numbering files.
 - Minimal package manifest schema.
 - First accepted effect set and handler policies.
-- Signature restriction or effect-interface sealing for polymorphic effects.
 - Whether executable local mutation belongs in the first interpreter release.
 - LLVM major version and Inkwell feature.
 - Native runtime memory-management strategy.
 - Multi-shot handler semantics.
-- Capability-resource split and authority-passing rules.
 - Structured-concurrency execution semantics.
 - Language-server protocol surface.
 
@@ -503,6 +519,9 @@ implementation.
 - Koka language site, <https://koka-lang.github.io/>, accessed 2026-06-27.
 - Daan Leijen, "Koka: Programming with Row Polymorphic Effect Types",
   <https://arxiv.org/abs/1406.2061>, accessed 2026-06-27.
+- Daan Leijen, "Algebraic Effects for Functional Programming",
+  <https://www.microsoft.com/en-us/research/wp-content/uploads/2016/08/algeff-tr-2016-v3.pdf>,
+  accessed 2026-06-27.
 - Daniel Hillerstrom and Sam Lindley, "Liberating Effects with Rows and
   Handlers", <https://dl.acm.org/doi/10.1145/2976022.2976033>, accessed
   2026-06-27.

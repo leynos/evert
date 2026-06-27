@@ -37,9 +37,12 @@ backend deferral. See `docs/evert-design.md` §§1-3 and
     every deferred ECLP is marked as deferred or staged.
 - [ ] 1.1.2. Add ADRs for the MVP effect set and package manifest boundary.
   - Requires 1.1.1.
-  - See `docs/evert-design.md` §§8 and 12.
-  - Success: the first semantic slice knows which effects and manifest fields
-    it must parse and check.
+  - See `docs/evert-design.md` §§8 and 12,
+    `docs/adr-004-effect-interface-sealing-gate.md`, and
+    `docs/adr-005-capability-authority-staging.md`.
+  - Success: the first semantic slice knows that `Throw<E>` and `Console` are
+    executable, `Clock` is staged, and the manifest fields it must parse and
+    check are documented.
 - [ ] 1.1.3. Decide the first crate set and workspace metadata.
   - Requires 1.1.1 and `docs/adr-001-query-based-compiler-workspace.md`.
   - Create only crates needed by phases 2 and 3.
@@ -172,8 +175,7 @@ can coexist in the MVP. See `docs/evert-design.md` §8.
   - Requires 3.1.2.
   - Success: accepted fixtures infer private signatures and require public
     signatures.
-- [ ] 3.2.2. Implement effect-row inference for `Throw<E>`, `Console`, and
-  `Clock`.
+- [ ] 3.2.2. Implement effect-row inference for `Throw<E>` and `Console`.
   - Requires 3.2.1 and 1.1.2.
   - Success: inferred effect rows appear in diagnostics and dump output.
 - [ ] 3.2.3. Enforce `pure fn` empty effect rows.
@@ -190,10 +192,11 @@ can coexist in the MVP. See `docs/evert-design.md` §8.
   - Success: orphan and overlapping instances fail before lowering.
 - [ ] 3.2.6. Add a design checkpoint for effect-interface sealing.
   - Requires 3.2.2.
-  - See `docs/evert-design.md` §8.
-  - Success: row-polymorphic fixtures either demonstrate that unrestricted
-    effect interfaces are safe enough for the MVP or open an ADR for signature
-    restriction.
+  - See `docs/evert-design.md` §8 and
+    `docs/adr-004-effect-interface-sealing-gate.md`.
+  - Success: row-polymorphic fixtures either demonstrate that the current
+    effect-interface model is safe enough for the next slice or open a
+    follow-up ADR for signature restriction.
 
 ## 4. Vertical slice 3: Core interpreter as semantic oracle
 
@@ -221,6 +224,12 @@ many feature-specific paths. See `docs/evert-design.md` §§9-10.
 - [ ] 4.1.3. Add `evert dump core`.
   - Requires 4.1.2.
   - Success: reviewers can inspect Core for every accepted MVP fixture.
+- [ ] 4.1.4. Add the typed-Core size budget.
+  - Requires 4.1.2.
+  - See `docs/evert-design.md` §§9 and 13.
+  - Success: representative fixtures report Core node counts and
+    type-annotation growth, and unexpected growth fails review before backend
+    work begins.
 
 ### 4.2. Execute pure and data-level programmes
 
@@ -258,8 +267,8 @@ ambient. See `docs/evert-design.md` §§8-10.
   - Requires 4.3.1, 4.3.2, and the accepted ECLP split.
   - See `docs/evert-design.md` §8.4.
   - Success: the roadmap either accepts an executable `mutate` implementation
-    task with heap-independence tests or defers execution while keeping static
-    rejection fixtures for escaping cells.
+    task with heap-independence tests or defers execution while keeping
+    parser, semantic rejection, and escaping-cell fixtures.
 - [ ] 4.3.4. Add E2E CLI coverage for `evert check`, `evert run`, and
   `evert dump core`.
   - Requires 4.3.1-4.3.3.
@@ -356,9 +365,10 @@ earlier only through an ADR or RFC that explains the new dependency.
   - Requires 4.3.3.
   - Success: `mutate` either executes with non-escape and heap-independence
     evidence, or the deferred ECLP states the remaining proof and runtime work.
-- [ ] 6.3.2. Accept an RFC for capability values and handler-provided
-  authority.
+- [ ] 6.3.2. Accept an RFC for capability values, `Clock`, and
+  handler-provided authority.
   - Requires phase 4.
+  - See `docs/adr-005-capability-authority-staging.md`.
   - Success: filesystem, network, clock, and unsafe authority cannot be
     performed by naming a type alone.
 - [ ] 6.3.3. Accept an RFC for unsafe blocks and foreign-function interfaces.
