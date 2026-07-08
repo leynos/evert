@@ -87,6 +87,8 @@ jobs:
         run: make audit
       - name: Lint
         run: make lint
+      - name: Workflow contract tests
+        run: make test-workflow-contracts
       - name: Log coverage linker configuration
         run: |
           echo "Coverage linker: clang"
