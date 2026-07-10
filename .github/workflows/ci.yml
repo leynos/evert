@@ -39,6 +39,8 @@ jobs:
             !**/dist/**
       - name: Setup uv
         uses: astral-sh/setup-uv@9225f843d7a9f80a757cf25ef48901fda69ba4bc
+      - name: Spelling
+        run: make spelling
       - name: Install test runner
         env:
           RUSTFLAGS: ""

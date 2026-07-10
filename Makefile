@@ -1,4 +1,6 @@
-.PHONY: help all clean test build release coverage lint fmt check-fmt markdownlint nixie audit rust-audit test-workflow-contracts
+.PHONY: help all clean test build release coverage lint fmt check-fmt \
+	markdownlint nixie audit rust-audit spelling spelling-helper-test \
+	test-workflow-contracts
 
 SHELL := bash
 
@@ -20,11 +22,15 @@ COVERAGE_RUST_FLAGS ?= $(RUST_FLAGS) -C link-arg=$(COVERAGE_LINKER_FLAGS)
 MDLINT ?= markdownlint-cli2
 NIXIE ?= nixie
 WHITAKER ?= whitaker
+UV ?= uv
+UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
+TYPOS_VERSION ?= 1.48.0
+TYPOS = $(UV) tool run typos@$(TYPOS_VERSION)
 
 build: target/debug/$(TARGET) ## Build debug binary
 release: target/release/$(TARGET) ## Build release binary
 
-all: check-fmt lint test ## Perform a comprehensive check of code
+all: check-fmt lint test spelling ## Perform a comprehensive check of code
 
 clean: ## Remove build artifacts
 	$(CARGO) clean
@@ -62,8 +68,20 @@ fmt: ## Format Rust and Markdown sources
 check-fmt: ## Verify formatting
 	$(CARGO) fmt --all -- --check
 
-markdownlint: ## Lint Markdown files
+markdownlint: spelling ## Lint Markdown files and enforce repository spelling
 	$(MDLINT) '**/*.md'
+
+spelling: spelling-helper-test ## Enforce en-GB-oxendict spelling in Markdown prose
+	@$(UV_ENV) $(UV) run scripts/generate_typos_config.py
+	@git ls-files -z '*.md' | \
+		xargs -0 -r env $(UV_ENV) $(TYPOS) --config typos.toml --force-exclude
+
+spelling-helper-test: ## Validate the shared spelling-policy integration
+	@PYTHONPATH=scripts $(UV_ENV) $(UV) run --python 3.13 \
+		--with pytest==9.0.2 --with pytest-cov==7.0.0 \
+		python -m pytest scripts/tests/test_typos_rollout.py \
+		--cov=generate_typos_config --cov=typos_rollout \
+		--cov=typos_rollout_cache --cov-fail-under=90
 
 nixie: ## Validate Mermaid diagrams
 	$(NIXIE) --no-sandbox
