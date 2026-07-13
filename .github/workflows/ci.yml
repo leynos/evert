@@ -18,8 +18,9 @@ jobs:
       - uses: actions/checkout@4f1f4aec02e41874fa0262ea8ff5172d7978ad1e
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Setup Rust
-        uses: leynos/shared-actions/.github/actions/setup-rust@73f02134f6f1c2335326d1b9cdefaddd287bf23e
+        uses: leynos/shared-actions/.github/actions/setup-rust@927edd45ae77be4251a8a18ca9eb5613a2e32cbd
       - name: Install mold linker
         if: runner.os == 'Linux'
         run: |
@@ -94,7 +95,7 @@ jobs:
           echo "Coverage CFLAGS: -fuse-ld=lld"
           echo "Coverage LDFLAGS: -fuse-ld=lld"
       - name: Test and Measure Coverage
-        uses: leynos/shared-actions/.github/actions/generate-coverage@455d9ed03477c0026da96c2541ca26569a74acac
+        uses: leynos/shared-actions/.github/actions/generate-coverage@927edd45ae77be4251a8a18ca9eb5613a2e32cbd
         env:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
           RUSTFLAGS: -C link-arg=-fuse-ld=lld
@@ -103,12 +104,14 @@ jobs:
         with:
           output-path: lcov.info
           format: lcov
-      - name: Upload coverage data to CodeScene
-        env:
-          CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
-        if: ${{ env.CS_ACCESS_TOKEN }}
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@29eea2635ee0f92e42c05f4cd360b7f1a2f00b12
-        with:
-          format: lcov
-          access-token: ${{ env.CS_ACCESS_TOKEN }}
-          installer-checksum: ${{ vars.CODESCENE_CLI_SHA256 }}
+          with-ratchet: 'true'
+      # The `mode: check` step is deliberately not wired in yet: CodeScene
+      # project 81924 has no coverage-gates configuration, so
+      # `cs-coverage check` would fail every run with "HTTP call
+      # succeeded, but the received project-config isn't valid. Lacks the
+      # gates configuration." — a CodeScene-side per-project setting, not
+      # a CI defect (ddlint#287 and chutoro#156 hit the byte-identical
+      # error). `coverage-main.yml` uploads main-branch coverage instead.
+      # Add the check step in a fast-follow PR once the gate is confirmed
+      # to resolve, or once CodeScene confirms the project's coverage
+      # gate is enabled.
