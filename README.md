@@ -1,5 +1,8 @@
 # Evert
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](
+https://deepwiki.com/leynos/evert)
+
 This is a generated project using [Copier](https://copier.readthedocs.io/).
 
 ## Documentation
