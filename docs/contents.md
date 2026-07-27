@@ -1,7 +1,7 @@
 # Documentation contents
 
-[Documentation contents](contents.md) is the index for Evert's
-documentation set.
+[Documentation contents](contents.md) is the index for Evert's documentation
+set.
 
 ## Project guides
 
