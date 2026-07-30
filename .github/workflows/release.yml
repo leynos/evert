@@ -42,15 +42,15 @@ jobs:
             target: x86_64-unknown-freebsd
             ext: ""
     steps:
-      - uses: actions/checkout@4f1f4aec02e41874fa0262ea8ff5172d7978ad1e
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           persist-credentials: false
-      - uses: leynos/shared-actions/.github/actions/setup-rust@c3141c3d4cb2a2828d2abbcf3d94b15197740c58
+      - uses: leynos/shared-actions/.github/actions/setup-rust@19a7f5d1b8d5c1b2236c39720a5744492b3fc129
         with:
           toolchain: stable
       - name: Cache cross binary
         id: cache-cross
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ~/.cargo/bin/cross
           key: cross-${{ env.CROSS_REVISION }}
@@ -65,7 +65,7 @@ jobs:
           fi
           cargo install cross --git https://github.com/cross-rs/cross --rev "${CROSS_REVISION}"
       - name: Cache cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             ~/.cargo/registry
@@ -105,7 +105,7 @@ jobs:
       - uses: actions/download-artifact@484a0b528fb4d7bd804637ccb632e47a0e638317
         with:
           path: artifacts
-      - uses: softprops/action-gh-release@132dbbba49e22bd4837f09b46d32a8edaf6baa58
+      - uses: softprops/action-gh-release@5a6f51711ce2ba103b78f5e9550f810679f11e0e
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
