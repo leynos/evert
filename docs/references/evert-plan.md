@@ -25,7 +25,7 @@ concurrency is structured; ownership is semantic rather than decorative; unsafe
 code is explicit, fenced, and auditable; and diagnostics are a first-class part
 of the language design.
 
-The deliverable is therefore two intertwined artifacts: (a) a working compiler
+The deliverable is therefore two intertwined artefacts: (a) a working compiler
 implementation that realizes the Evert semantics, and (b) the **ECLP corpus
 (ECLP-0000 through ECLP-0030)** — the user's "Evert Core Language Proposals" —
 captured as the language's normative specification that the implementation is
@@ -107,7 +107,7 @@ directive.
   recomputation and future IDE responsiveness.
 - **Diagnostic quality**: Every construct that cannot explain itself to a tired
   human "at 01:43" is considered a design defect (ECLP-0000); diagnostics are
-  tested as first-class artifacts.
+  tested as first-class artefacts.
 - **Determinism and testability**: A tree-walking interpreter acts as the
   single source of semantic truth so that backend bugs cannot masquerade as
   semantic bugs.
@@ -204,7 +204,7 @@ LLVM IR
   solve and "zonk" into an immutable result, and identify recursive definition
   groups as strongly connected components.
 - **Build an interpreter before LLVM** so that "every semantic bug" does not
-  "wear an optimiser moustache and deny everything."
+  "wear an optimizer moustache and deny everything."
 - Lower effects and handlers into Evert's own continuation representation
   *before* LLVM sees them; only resumable algebraic effects need continuation
   machinery, while pure code, `Throw<E>`-only code, and non-resumable I/O lower
@@ -284,7 +284,7 @@ pure fn histogram(
     }
 ```
 
-Additional verbatim artifacts — the milestone set (M0–M12), the crate layout,
+Additional verbatim artefacts — the milestone set (M0–M12), the crate layout,
 the Salsa query graph, and the `Type`/`EffectRow`/`ThunkState`/`Backend` Rust
 sketches — are preserved in their corresponding sub-sections (0.3, 0.4, 0.5,
 and 0.7).
@@ -820,7 +820,7 @@ API.
 
 Evert has no graphical UI; its "interface" is the command line and, above all,
 its diagnostics — a first-class design surface per ECLP-0000 and ECLP-0025. The
-key insights, goals, and required behaviors drawn directly from the user's
+key insights, goals, and required behaviours drawn directly from the user's
 instructions are:
 
 - **Goal — explain, don't intimidate.** Errors must describe source-level
@@ -879,7 +879,7 @@ of the tree.
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml                   # build, test, fmt --check, clippy, cargo-deny
-│       └── release.yml              # Tagged release artifacts
+│       └── release.yml              # Tagged release artefacts
 ├── crates/
 │   ├── evert_span/                  # Spans, FileId, source maps, interner/Symbol
 │   │   ├── Cargo.toml
