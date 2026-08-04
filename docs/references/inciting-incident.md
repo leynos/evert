@@ -817,7 +817,7 @@ evert_driver
 
 So yes: Logos + Chumsky + Salsa + LLVM, with a layout expander, an interpreter
 and a custom intermediate language between Salsa and LLVM. That gives Evert a
-sturdy chassis without welding its type theory directly to the optimiser.
+sturdy chassis without welding its type theory directly to the optimizer.
 
 You: Please draft ECLP's (Evert Core Language Proposals) for each major
 capability and of the language. Like PEPs but before we started extending it 😊
@@ -844,7 +844,7 @@ temper, and small brass squirrel engine.
 
 I’ve treated the attached `peglet` document as the normative metalanguage for
 syntax sketches. That is a good fit because `peglet` explicitly aims to “write
-the grammar once”, make tokenisation explicit, preserve structure for AST or
+the grammar once”, make tokenization explicit, preserve structure for AST or
 CST generation, and expose PEG-specific behaviour rather than pretending
 ordered choice behaves like ordinary alternation.  Its separation of tokens and
 trivia is exactly what Evert wants for compiler diagnostics, formatting and
@@ -855,7 +855,7 @@ consistent notation without sneaking Rust actions into the grammar.
 I’m reading “Mojolang” as Mojo, since its current manual organizes language
 material around functions, modules, value ownership, lifetimes, traits,
 generics, pointers and GPU programming, which makes it a useful foil for the
-“systems language without ritualized splinters” part of Evert.
+“systems language without ritualised splinters” part of Evert.
 ([docs.modular.com](https://docs.modular.com/mojo/manual/))
 
 ## ECLP-0000: The Evert Mission
@@ -3079,7 +3079,7 @@ M12 LLVM backend.
 ```
 
 The crucial move is to build an interpreter before LLVM. Otherwise every
-semantic bug will wear an optimiser moustache and deny everything.
+semantic bug will wear an optimizer moustache and deny everything.
 
 ## Closing Design Note
 

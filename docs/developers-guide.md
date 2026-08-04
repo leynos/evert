@@ -41,7 +41,6 @@ The main `.github/workflows/ci.yml` workflow deliberately does not run
 `make test WITH_ACT=1`; the separate Act workflow runs those slower
 container-backed checks in parallel.
 
-
 ## Spelling policy
 
 `make all` and `make markdownlint` enforce en-GB-oxendict spelling with the
