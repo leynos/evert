@@ -12,8 +12,14 @@
 //! estate-wide audit (concordat's forthcoming DF-004 rule) would ever
 //! catch it. See AGENTS.md's "dev-fast is the standard development
 //! path" section for the convention this test enforces.
+//!
+//! Assertions check each cargo-invoking recipe *line* individually
+//! rather than the recipe block as a whole: a target with several
+//! cargo lines (nextest plus doc-tests, `cargo doc` plus `cargo
+//! clippy`) would otherwise pass a whole-block substring match even
+//! when only one of those lines carries `--config`.
 
-use std::io;
+use std::{io, process::Command};
 
 use camino::Utf8Path;
 use cap_std::{ambient_authority, fs_utf8::Dir};
@@ -64,8 +70,19 @@ fn mentions_dev_fast(text: &str) -> bool {
     lower.contains("dev-fast") || lower.contains("dev_fast")
 }
 
-/// Confirms each standard development target routes cargo through the
-/// dev-fast fragment.
+/// Returns the lines within `block` that actually invoke cargo via the
+/// Makefile's `$(CARGO)` macro, as distinct from unrelated recipe lines
+/// such as the Whitaker Dylint invocation, which is not cargo and is
+/// not expected to carry `--config`.
+fn cargo_invocation_lines(block: &str) -> Vec<&str> {
+    block
+        .lines()
+        .filter(|line| line.contains("$(CARGO)"))
+        .collect()
+}
+
+/// Confirms every cargo invocation in a standard development target's
+/// recipe routes through the dev-fast fragment.
 ///
 /// The `#[case]` pairs the target a developer invokes with the Makefile
 /// rule whose recipe text should be checked. `build`'s own rule has no
@@ -87,18 +104,28 @@ fn standard_targets_use_dev_fast(#[case] invoked_target: &str, #[case] recipe_ta
              development path\" section"
         )
     });
+    let cargo_lines = cargo_invocation_lines(&block);
     assert!(
-        block.contains("--config"),
-        "Makefile target `{recipe_target}` (backing `make {invoked_target}`) must pass --config \
-         to cargo so it uses the dev-fast profile, per AGENTS.md's \"dev-fast is the standard \
-         development path\" section"
-    );
-    assert!(
-        mentions_dev_fast(&block),
-        "Makefile target `{recipe_target}` (backing `make {invoked_target}`) must reference the \
-         dev-fast fragment (tools/dev-fast/config.toml) so --config actually points at it, per \
+        !cargo_lines.is_empty(),
+        "Makefile target `{recipe_target}` (backing `make {invoked_target}`) has no $(CARGO) \
+         invocation to check; the dev-fast standard-path convention expects at least one, per \
          AGENTS.md's \"dev-fast is the standard development path\" section"
     );
+    for line in cargo_lines {
+        assert!(
+            line.contains("--config"),
+            "Makefile target `{recipe_target}` (backing `make {invoked_target}`) has a cargo \
+             invocation that does not pass --config: `{line}`; every cargo line must use the \
+             dev-fast profile, per AGENTS.md's \"dev-fast is the standard development path\" \
+             section"
+        );
+        assert!(
+            mentions_dev_fast(line),
+            "Makefile target `{recipe_target}` (backing `make {invoked_target}`) has a cargo \
+             invocation whose --config does not reference the dev-fast fragment: `{line}`, per \
+             AGENTS.md's \"dev-fast is the standard development path\" section"
+        );
+    }
 }
 
 /// Confirms the coverage target keeps the supported LLVM backend and
@@ -126,5 +153,66 @@ fn dev_fast_fragment_exists() {
         found,
         "{relative} must exist: the standard build/test/lint/typecheck targets pass --config \
          pointing at it"
+    );
+}
+
+/// Runs `make --dry-run <target> CARGO=<cargo_override>` in the crate
+/// root and returns its captured stdout. `--dry-run` prints the recipe
+/// Make would run without executing it, so this needs neither a
+/// nightly toolchain nor `mold` installed.
+fn make_dry_run(target: &str, cargo_override: &str) -> io::Result<String> {
+    let output = Command::new("make")
+        .arg("--dry-run")
+        .arg(target)
+        .arg(format!("CARGO={cargo_override}"))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()?;
+    String::from_utf8(output.stdout)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
+
+/// Confirms the opt-in `dev-build`/`dev-test` targets honour a CARGO
+/// override, proving they invoke `$(CARGO)` rather than a hard-coded
+/// `cargo`. Overriding CARGO on the command line must show up ahead of
+/// `--config`, which must in turn come before the dev-fast fragment
+/// reference, in the emitted recipe.
+#[rstest]
+#[case("dev-build")]
+#[case("dev-test")]
+fn dev_fast_targets_honour_cargo_override(#[case] target: &str) {
+    let output = make_dry_run(target, "probe-cargo").expect("make --dry-run must run and succeed");
+    let cargo_pos = output.find("probe-cargo").unwrap_or_else(|| {
+        panic!(
+            "`make --dry-run {target} CARGO=probe-cargo` did not emit \"probe-cargo\"; the recipe \
+             must invoke $(CARGO) rather than a hard-coded cargo, per AGENTS.md's \"dev-fast is \
+             the standard development path\" section. Output: {output:?}"
+        )
+    });
+    let config_pos = output.find("--config").unwrap_or_else(|| {
+        panic!(
+            "`make --dry-run {target} CARGO=probe-cargo` did not emit \"--config\". Output: \
+             {output:?}"
+        )
+    });
+    assert!(
+        cargo_pos < config_pos,
+        "`make --dry-run {target} CARGO=probe-cargo` must emit the substituted cargo binary \
+         before --config; got: {output:?}"
+    );
+    let lower = output.to_lowercase();
+    let dev_fast_pos = ["dev-fast", "dev_fast"]
+        .into_iter()
+        .filter_map(|needle| lower.find(needle))
+        .min()
+        .unwrap_or_else(|| {
+            panic!(
+                "`make --dry-run {target} CARGO=probe-cargo` did not reference the dev-fast \
+                 fragment. Output: {output:?}"
+            )
+        });
+    assert!(
+        config_pos < dev_fast_pos,
+        "`make --dry-run {target} CARGO=probe-cargo` must emit --config before the dev-fast \
+         fragment reference; got: {output:?}"
     );
 }
