@@ -77,8 +77,15 @@ jobs:
           else
             cargo binstall --no-confirm --locked "whitaker-installer@${WHITAKER_INSTALLER_VERSION}"
           fi
-          # --cranelift provisions rustc-codegen-cranelift on Whitaker's pinned
-          # toolchain; this project builds with the Cranelift debug backend.
+          # --cranelift provisions rustc-codegen-cranelift on Whitaker's own
+          # pinned toolchain, kept separate from this project's toolchain
+          # pin. This project's debug builds use Cranelift only via the
+          # opt-in tools/dev-fast/config.toml fragment, which the
+          # build/test/lint/typecheck Makefile targets pass explicitly with
+          # --config; .cargo/config.toml no longer sets a codegen backend
+          # (it configures the mold linker only). The Lint step's Whitaker
+          # invocation does not pass --config, so it lints under the
+          # default LLVM backend regardless of this provisioning.
 
           whitaker-installer --cranelift
       - name: Audit dependencies
