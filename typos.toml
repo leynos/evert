@@ -31,8 +31,13 @@ extend-exclude = [
 locale = "en-gb"
 extend-ignore-re = [
     "(?s)```.*?```",
+    "-fuse-ld=mold",
+    "Cranelift \\+ mold",
+    "Cranelift and mold",
     "\\brust-analyzer\\b",
     "`[^`\\n]+`",
+    "`mold`",
+    "mold linker",
 ]
 
 [default.extend-words]
@@ -1338,7 +1343,6 @@ extend-ignore-re = [
 "modularizers" = "modularizers"
 "modularizes" = "modularizes"
 "modularizing" = "modularizing"
-"mold" = "mold"
 "monetisable" = "monetizable"
 "monetisation" = "monetization"
 "monetisations" = "monetizations"
