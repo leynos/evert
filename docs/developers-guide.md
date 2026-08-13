@@ -77,10 +77,16 @@ as a test assertion on the SHA string.
 
 ## Tooling
 
-Development builds use Cranelift for debug code generation. On Linux targets,
-`.cargo/config.toml` configures clang to link with `mold` so debug builds link
-quickly. Coverage generation uses `lld` because LLVM coverage tooling expects
-LLVM-compatible linker behaviour.
+Development builds use the standard LLVM backend by default. On Linux
+targets, `.cargo/config.toml` configures clang to link with `mold` so debug
+builds link quickly. Coverage generation uses `lld` because LLVM coverage
+tooling expects LLVM-compatible linker behaviour.
+
+The opt-in accelerated path, `make dev-build` and `make dev-test`, applies
+the Cranelift codegen backend alongside `mold` via
+`tools/dev-fast/config.toml`. It requires a nightly toolchain and is never
+applied to release, coverage, or verification builds; see [Fast development
+builds](../AGENTS.md#fast-development-builds) in `AGENTS.md`.
 
 Install `clang`, `lld`, `mold`, `python3`, and `cargo-audit` before running the
 full generated workflow locally on Linux.

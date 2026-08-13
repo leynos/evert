@@ -34,6 +34,9 @@ compact and omits build output such as `target/`.
 
 ├── tests/
 │   └── stub.rs
+├── tools/
+│   └── dev-fast/
+│       └── config.toml
 ├── AGENTS.md
 ├── Cargo.toml
 ├── LICENSE
@@ -47,7 +50,7 @@ compact and omits build output such as `target/`.
 ## Path responsibilities
 
 - `.cargo/config.toml`: Configures Cargo defaults for local development,
-  including Linux linker and code-generation settings.
+  including Linux linker settings.
 - `.github/dependabot.yml`: Configures automated dependency update checks.
 - `.github/workflows/act-validation.yml`: Runs the generated workflow
   validation through `act` separately from main CI.
@@ -77,6 +80,9 @@ compact and omits build output such as `target/`.
   behaviour.
 - `tests/stub.rs`: Keeps the generated test directory valid until real tests
   replace it.
+- `tools/dev-fast/config.toml`: Configures the opt-in accelerated debug build
+  (Cranelift plus `mold`), applied explicitly via `make dev-build` and
+  `make dev-test`; never merged into `.cargo/config.toml`.
 - `AGENTS.md`: Provides repository-specific working instructions for agents and
   contributors.
 - `Cargo.toml`: Defines package metadata, dependencies, lint policy, and Cargo
