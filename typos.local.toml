@@ -15,7 +15,10 @@ accepted = ["Center", "Flavored"]
 mold = "mold"
 
 [patterns]
-ignore = []
+# Inline code spans quote identifiers verbatim, so they are not en-GB
+# prose and must stay exempt (for example, documentation-style-guide.md's
+# deliberate `color` API-spelling example).
+ignore = ["`[^`\\n]+`"]
 
 [files]
 exclude = []
