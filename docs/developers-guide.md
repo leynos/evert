@@ -16,6 +16,41 @@ The main `.github/workflows/ci.yml` workflow deliberately does not run
 `make test WITH_ACT=1`; the separate Act workflow runs those slower
 container-backed checks in parallel.
 
+## Lint baseline
+
+`Cargo.toml`'s `[lints.clippy]`, `[lints.rust]`, and `[lints.rustdoc]`
+tables hold this repository's lint baseline. `evert` is a single crate
+with no `[workspace]` table, so the tables live directly on the crate
+manifest rather than under `[workspace.lints]` with per-member
+inheritance. `Cargo.toml` is authoritative for the exact entries; this
+section summarizes intent rather than duplicating the list.
+
+The baseline follows the estate's phase 2 Rust conventions: hygiene
+and panic-prone operations are denied outright (`unwrap_used`,
+`indexing_slicing`, `unreachable`, and similar), `pedantic` is enabled
+as a warning tier, and `missing_docs` and `missing_crate_level_docs`
+require real documentation rather than suppression.
+
+Where a lint violation is a genuine, tracked deferral rather than a
+bug, annotate the site with
+`#[expect(clippy::<lint>, reason = "...")]`, never `allow`. An
+`#[expect]` only suppresses the warning while the violation remains;
+once the site is fixed, the unfulfilled expectation itself warns, so
+the deferral surfaces for removal instead of rotting silently in the
+codebase.
+
+`clippy.toml` carries the numeric thresholds behind the baseline
+(cognitive complexity, argument count, function length, nesting
+depth) and the `disallowed-methods` list that blocks direct
+`std::env::var`/`var_os`/`vars`/`vars_os`/`set_var`/`remove_var`
+calls. Each disallowed method's `reason` tells the contributor what to
+do instead: inject an environment reader in production code, or use a
+stub environment in tests.
+
+The pinned nightly toolchain in `rust-toolchain.toml` supplies the
+`rustfmt`, `clippy`, and `rust-analyzer` components the baseline and
+this workflow depend on.
+
 ## Spelling policy
 
 `make all` and `make markdownlint` enforce en-GB-oxendict spelling with the
@@ -77,10 +112,20 @@ as a test assertion on the SHA string.
 
 ## Tooling
 
-Development builds use Cranelift for debug code generation. On Linux targets,
-`.cargo/config.toml` configures clang to link with `mold` so debug builds link
-quickly. Coverage generation uses `lld` because LLVM coverage tooling expects
-LLVM-compatible linker behaviour.
+Development builds use the standard LLVM backend by default. On Linux
+targets, `.cargo/config.toml` configures clang to link with `mold` so debug
+builds link quickly. Coverage generation uses `lld` because LLVM coverage
+tooling expects LLVM-compatible linker behaviour.
+
+The pinned nightly toolchain retains the `llvm-tools-preview` and
+`rustc-codegen-cranelift-preview` components, so the Cranelift backend and
+LLVM coverage tooling are always installed; `tools/dev-fast/config.toml` is
+what actually controls the repository-local opt-in activation. The opt-in
+accelerated path, `make dev-build` and `make dev-test`, applies the
+Cranelift codegen backend alongside `mold` via that fragment. It requires a
+nightly toolchain and is never applied to release, coverage, or
+verification builds; see [Fast development
+builds](../AGENTS.md#fast-development-builds) in `AGENTS.md`.
 
 Install `clang`, `lld`, `mold`, `python3`, and `cargo-audit` before running the
 full generated workflow locally on Linux.
