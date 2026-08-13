@@ -10,10 +10,14 @@ settings, and documented starter code. Library projects render `src/lib.rs`.
 Application projects render `src/main.rs`, `src/lib.rs`, release automation, and
 `[package.metadata.binstall]` metadata for binary installation.
 
-Development builds use the standard LLVM backend by default. On Linux
-targets, `.cargo/config.toml` configures clang to link with `mold` so local
-debug builds link quickly. Coverage generation uses `lld` instead because
-LLVM coverage tools expect LLVM-compatible linker behaviour.
+Development builds use the standard LLVM backend by default. Only the
+*default automatic activation* of Cranelift was removed from
+`.cargo/config.toml`; the Cranelift component itself remains pinned in
+`rust-toolchain.toml` and stays installed, so the capability is still
+available, it is just no longer applied automatically. On Linux targets,
+`.cargo/config.toml` configures clang to link with `mold` so local debug
+builds link quickly. Coverage generation uses `lld` instead because LLVM
+coverage tools expect LLVM-compatible linker behaviour.
 
 The opt-in accelerated path, `make dev-build` and `make dev-test`, applies
 the Cranelift codegen backend alongside `mold` via
