@@ -12,7 +12,22 @@ accepted = ["Center", "Flavored"]
 [words.corrections]
 
 [patterns]
-ignore = []
+# Inline code spans quote identifiers verbatim, so they are not en-GB
+# prose and must stay exempt (for example, documentation-style-guide.md's
+# deliberate `color` API-spelling example).
+#
+# The mold-linker phrases below are scoped exemptions, not a blanket
+# "mold" correction: mold (https://github.com/rui314/mold) is a linker
+# name, not a misspelling of "mould", but only in these specific
+# phrasings. A stray "mold" elsewhere in prose should still be caught.
+ignore = [
+  "`[^`\\n]+`",
+  "-fuse-ld=mold",
+  "mold linker",
+  "Cranelift \\+ mold",
+  "Cranelift and mold",
+  "`mold`",
+]
 
 [files]
 exclude = []
