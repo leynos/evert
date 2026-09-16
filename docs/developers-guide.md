@@ -50,23 +50,22 @@ on.
 
 ## Spelling policy
 
-`make all` and `make markdownlint` enforce en-GB-oxendict spelling with the
-`TYPOS_VERSION` pin in the `Makefile`. The gate first tests the policy helper,
-refreshes the shared base dictionary, generates `typos.toml`, and scans tracked
-Markdown files.
+`make all` and `make markdownlint` enforce en-GB-oxendict spelling by running
+`make spelling`, which invokes the `typos-config-builder` gate pinned by
+`TYPOS_CONFIG_BUILDER_VERSION` in the `Makefile`. The gate regenerates
+`typos.toml` from the live shared dictionary and this repository's overlay on
+every run, then scans tracked Markdown files.
 
-The shared dictionary is maintained in `leynos/agent-helper-scripts`. Its
-repository-local cache and freshness metadata are untracked. The helper
-replaces the cache only when the authoritative copy is newer and can reuse a
-valid cached copy while offline. A clean checkout with an unavailable network
-retains the reviewed, tracked `typos.toml` policy.
+The shared dictionary is maintained in `leynos/agent-helper-scripts` and is
+fetched by the gate; `typos.toml` is a generated artefact, so CI never
+drift-checks it against the checked-in copy.
 
-Do not edit generated entries in `typos.toml`. Put only repository-specific
-proper nouns, quoted upstream titles, fixtures, stems or exclusions in
-`typos.local.toml`, then regenerate with:
+Do not edit `typos.toml` by hand. Put only repository-specific proper nouns,
+quoted upstream titles, fixtures, stems or exclusions in `typos.local.toml`,
+then rerun:
 
 ```bash
-uv run scripts/generate_typos_config.py
+make spelling
 ```
 
 Keep upstream API spellings in inline or fenced code where practical. The
