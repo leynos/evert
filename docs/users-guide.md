@@ -24,8 +24,7 @@ The generated `Makefile` exposes these public targets:
   falls back to `cargo test` otherwise. All projects also run doctests.
 - `make build` builds the debug target.
 - `make dev-build` builds the debug target using the opt-in accelerated
-  build configuration described in the
-  [developers' guide](developers-guide.md).
+  build configuration described in the [developers' guide](developers-guide.md).
 - `make dev-test` runs tests using the same configuration.
 - `make release` builds the release target.
 - `make coverage` writes `lcov.info` using `cargo llvm-cov` and `lld`.
@@ -36,5 +35,5 @@ The generated `Makefile` exposes these public targets:
 
 Install `clang`, `lld`, `python3`, and `cargo-audit` before running the full
 generated workflow locally on Linux. See the
-[developers' guide](developers-guide.md) for the additional tooling the
-opt-in accelerated build path requires.
+[developers' guide](developers-guide.md) for the additional tooling the opt-in
+accelerated build path requires.
