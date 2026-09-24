@@ -68,34 +68,41 @@ def _selection(step: Step) -> dict[str, object]:
 def _pull_request_lane(
     name: str, document: Document, step: Step, trunk: Step
 ) -> list[str]:
-    """Report a pull-request coverage step that cannot ratchet like main."""
-    inputs = step.get("with")
-    inputs = inputs if isinstance(inputs, dict) else {}
-    found = [
-        f"{name} coverage must not continue on error"
-        for scope in (step, holding_job(name, document, step))
-        if continues_on_error(scope)
+    """Report a pull-request coverage step that cannot ratchet like main.
+
+    The step's own guard is required, not merely permitted: the lane's
+    workflow also answers a push to main, and an unguarded step would then
+    write a second baseline there, outside the publisher's concurrency group.
+    A guard on the holding job could only narrow it, down to `false`, while
+    the step still read as guarded.
+    """
+    job = holding_job(name, document, step)
+    return [
+        f"{name} coverage {problem}"
+        for problem, failed in (
+            ("must not continue on error", any(map(continues_on_error, (step, job)))),
+            ("job must run unconditionally", "if" in job),
+            (
+                f"may run only as `{PULL_REQUEST_GUARD}`",
+                step.get("if") != PULL_REQUEST_GUARD,
+            ),
+            ("must set with-ratchet 'true'", _with(step, "with-ratchet") != "true"),
+            (
+                "must set publish-artefact 'false'",
+                _with(step, "publish-artefact") != "false",
+            ),
+            (
+                "selection differs from the publisher's",
+                _selection(step) != _selection(trunk),
+            ),
+            ("pin differs from the publisher's", step.get("uses") != trunk.get("uses")),
+            (
+                f"job permissions must be exactly {READ_ONLY}",
+                job.get("permissions") != READ_ONLY,
+            ),
+        )
+        if failed
     ]
-    # The step's own guard selects pull requests; a job guard could only
-    # narrow that, down to `false`, while the step still read as guarded.
-    if "if" in holding_job(name, document, step):
-        found.append(f"{name} coverage job must run unconditionally")
-    # Required, not merely permitted: the lane's workflow also answers a push
-    # to main, and an unguarded step would then write a second baseline there,
-    # outside the publisher's concurrency group.
-    if step.get("if") != PULL_REQUEST_GUARD:
-        found.append(f"{name} coverage may run only as `{PULL_REQUEST_GUARD}`")
-    if inputs.get("with-ratchet") != "true":
-        found.append(f"{name} coverage must set with-ratchet 'true'")
-    if inputs.get("publish-artefact") != "false":
-        found.append(f"{name} coverage must set publish-artefact 'false'")
-    if _selection(step) != _selection(trunk):
-        found.append(f"{name} coverage selection differs from the publisher's")
-    if step.get("uses") != trunk.get("uses"):
-        found.append(f"{name} coverage pin differs from the publisher's")
-    if holding_job(name, document, step).get("permissions") != READ_ONLY:
-        found.append(f"{name} coverage job permissions must be exactly {READ_ONLY}")
-    return found
 
 
 def _trunk_violations(publisher: str, trunk: Step, upload: Step) -> list[str]:
@@ -233,12 +240,28 @@ def _push_writers(documents: dict[str, Document], publisher: str) -> list[str]:
         for name, document in documents.items()
         if "push" in triggers(name, document)
     }
+    reached = closure(seeds, documents)
     return [
         f"{name} coverage can run on a push; guard it to pull requests"
-        for name, document in closure(seeds, documents).items()
+        for name, document in reached.items()
         if name != publisher
         for step in coverage_steps(name, document)
         if step.get("if") != PULL_REQUEST_GUARD
+    ] + _push_local_actions(reached)
+
+
+def _push_local_actions(reached: dict[str, Document]) -> list[str]:
+    """Report a local action a push runs, publisher included.
+
+    Its `action.yml` is not read by these rules, so it could generate coverage
+    and write a second baseline unseen; it is refused rather than followed.
+    """
+    return [
+        f"{name} runs the local action {step['uses']} on a push, "
+        "which these rules cannot read"
+        for name, document in reached.items()
+        for step in steps(name, document)
+        if str(step.get("uses", "")).startswith(("./", "$/"))
     ]
 
 

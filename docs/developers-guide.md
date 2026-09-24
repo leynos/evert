@@ -146,10 +146,11 @@ Two gaps are known and accepted, and both are tracked in
   but leaves the ratchet baseline one commit behind until the next push.
 
 No other workflow a push starts, directly or through a local call, may generate
-coverage outside the pull-request guard, so the publisher is the only baseline
-writer. Both coverage steps select the same inputs at the same `shared-actions`
-pin because the pull-request ratchet is only meaningful against a baseline
-measured the same way.
+coverage outside the pull-request guard, and none, the publisher included, may
+run a local action, whose `action.yml` the contract does not read, so the
+publisher is the only baseline writer. Both coverage steps select the same
+inputs at the same `shared-actions` pin because the pull-request ratchet is
+only meaningful against a baseline measured the same way.
 
 `make test-workflow-contracts` holds this shape. The contract tests are
 `codescene_pull_request_test.py`, `codescene_publisher_test.py` and
