@@ -18,6 +18,7 @@ compact and omits build output such as `target/`.
 │   └── workflows/
 │       ├── act-validation.yml
 │       ├── ci.yml
+│       ├── coverage-main.yml
 
 │       └── release.yml
 
@@ -33,7 +34,8 @@ compact and omits build output such as `target/`.
 │   └── main.rs
 
 ├── tests/
-│   └── stub.rs
+│   ├── stub.rs
+│   └── workflow_contracts/
 ├── tools/
 │   └── dev-fast/
 │       └── config.toml
@@ -56,6 +58,9 @@ compact and omits build output such as `target/`.
   validation through `act` separately from main CI.
 - `.github/workflows/ci.yml`: Runs the generated project's continuous
   integration checks.
+- `.github/workflows/coverage-main.yml`: Measures coverage on each push to
+  `main`, writes the coverage ratchet baseline, and is the only workflow that
+  uploads coverage to CodeScene.
 
 - `.github/workflows/release.yml`: Builds and publishes binary release
   artefacts for the application flavour.
@@ -80,6 +85,8 @@ compact and omits build output such as `target/`.
   behaviour.
 - `tests/stub.rs`: Keeps the generated test directory valid until real tests
   replace it.
+- `tests/workflow_contracts/`: Holds the pytest contract tests for the
+  workflow files, run by `make test-workflow-contracts`.
 - `tools/dev-fast/config.toml`: Configures the opt-in accelerated debug build
   (Cranelift plus `mold`), applied explicitly via `make dev-build` and
   `make dev-test`; never merged into `.cargo/config.toml`.
