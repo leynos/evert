@@ -47,6 +47,12 @@ def coverage_steps(name: str, document: Document) -> list[Step]:
     list of Step
         Every step calling the shared coverage action, in order.
 
+    Examples
+    --------
+    >>> step = {"uses": f"{COVERAGE_ACTION}@v1"}
+    >>> coverage_steps("ci.yml", {"jobs": {"t": {"steps": [{"run": "true"}, step]}}})
+    [{'uses': 'leynos/shared-actions/.github/actions/generate-coverage@v1'}]
+
     """
     return [step for step in steps(name, document) if calls(step, COVERAGE_ACTION)]
 
@@ -70,6 +76,10 @@ def _pull_request_lane(
         for scope in (step, holding_job(name, document, step))
         if continues_on_error(scope)
     ]
+    # The step's own guard selects pull requests; a job guard could only
+    # narrow that, down to `false`, while the step still read as guarded.
+    if "if" in holding_job(name, document, step):
+        found.append(f"{name} coverage job must run unconditionally")
     # Required, not merely permitted: the lane's workflow also answers a push
     # to main, and an unguarded step would then write a second baseline there,
     # outside the publisher's concurrency group.
@@ -132,6 +142,12 @@ def coverage_violations(documents: dict[str, Document]) -> list[str]:
     -------
     list of str
         One message per violation; empty when the repository complies.
+
+    Examples
+    --------
+    >>> from codescene_contract_support import fresh_documents
+    >>> coverage_violations(fresh_documents())
+    []
 
     """
     uploads = upload_steps(documents)
@@ -209,12 +225,13 @@ def _push_writers(documents: dict[str, Document], publisher: str) -> list[str]:
     Such a step writes a second baseline on every push to main, outside the
     publisher's concurrency group. The push side is followed through local
     calls as the pull-request side is, since a called workflow runs on its
-    caller's push.
+    caller's push; the publisher is a seed too, so its own callees are judged,
+    and only its own document is exempt.
     """
     seeds = {
         name
         for name, document in documents.items()
-        if name != publisher and "push" in triggers(name, document)
+        if "push" in triggers(name, document)
     }
     return [
         f"{name} coverage can run on a push; guard it to pull requests"

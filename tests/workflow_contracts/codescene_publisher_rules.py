@@ -17,13 +17,12 @@ from codescene_workflow_reader import (
     Step,
     calls,
     continues_on_error,
-    folded,
     holding_job,
     jobs,
-    scalars,
     steps,
     triggers,
 )
+from codescene_workflow_text import folded, scalars
 
 UPLOAD_ACTION: typ.Final[str] = (
     "leynos/shared-actions/.github/actions/upload-codescene-coverage"
@@ -75,6 +74,14 @@ def upload_steps(documents: dict[str, Document]) -> list[tuple[str, Step]]:
     list of tuple of (str, Step)
         Each uploading step with its workflow's file name.
 
+    Examples
+    --------
+    >>> step = {"uses": f"{UPLOAD_ACTION}@v1"}
+    >>> [(name, found is step) for name, found in upload_steps(
+    ...     {"main.yml": {"jobs": {"u": {"steps": [step]}}}}
+    ... )]
+    [('main.yml', True)]
+
     """
     return [
         (name, step)
@@ -105,13 +112,10 @@ def expected_concurrency(name: str) -> dict[str, object]:
     """Return the one concurrency block a publisher may declare.
 
     One group per ref, named after the workflow, never cancelling. Runs in one
-    group never overlap, and the survivor of any replacement is the newest
-    trigger, whose commit is the newest main at trigger time, so triggered runs
-    (pushes and dispatches) upload in commit order. A manual re-run of an older
-    run is an operator action that republishes that commit's coverage and
-    baseline until the next push supersedes it. Keying the group on the event
-    as well would let an earlier dispatch finish after a newer push and upload
-    older coverage last.
+    group never overlap, and a newer trigger replaces an older pending run
+    rather than queueing behind it. GitHub does not promise to start runs in
+    trigger order, so this does not guarantee commit order. Keying the group on
+    the event as well would let a dispatch and a push to main run at once.
 
     Parameters
     ----------
@@ -222,6 +226,12 @@ def publisher_violations(documents: dict[str, Document]) -> list[str]:
     list of str
         One message per violation; empty when the repository complies.
 
+    Examples
+    --------
+    >>> from codescene_contract_support import fresh_documents
+    >>> publisher_violations(fresh_documents())
+    []
+
     """
     uploads = upload_steps(documents)
     if len(uploads) != 1:
@@ -250,6 +260,11 @@ def retired_names(documents: dict[str, Document]) -> list[str]:
     -------
     list of str
         One message per workflow and retired name; empty when none remains.
+
+    Examples
+    --------
+    >>> retired_names({"get-codescene-sha.yml": {"jobs": {}}})
+    ['get-codescene-sha.yml still names get-codescene-sha']
 
     """
     found = [

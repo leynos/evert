@@ -221,6 +221,7 @@ def test_callee_secret_declaration_is_refused(documents: Documents) -> None:
         ),
         ({"run": "echo '${{ toJSON( secrets ) }}'"}, "serializes the secrets context"),
         ({"run": "echo ${{ secrets['CS_' + 'X'] }}"}, "indexes the secrets context"),
+        ({"run": "echo ${{ join(secrets.*, ',') }}"}, "filters the secrets context"),
         ({"run": "curl https://API.CODESCENE.IO"}, "names the CodeScene host"),
         ({"run": "cs-coverage check coverage.xml"}, "names the cs-coverage client"),
         (

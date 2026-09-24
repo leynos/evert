@@ -100,7 +100,7 @@ def test_publisher_never_cancels(documents: Documents, concurrency: object) -> N
     ],
 )
 def test_publisher_group_is_exactly_the_ref(documents: Documents, group: str) -> None:
-    """One group per ref keeps uploads in commit order."""
+    """One group per ref keeps runs on main from overlapping."""
     publisher, _ = find_publisher(documents)
     publisher["concurrency"] = {"group": group, "cancel-in-progress": False}
     assert_reports(publisher_violations, documents, "concurrency must be exactly")
@@ -223,6 +223,17 @@ def test_pull_request_coverage_cannot_be_switched_off(
     assert_reports(coverage_violations, documents, "may run only as")
 
 
+@pytest.mark.parametrize(
+    "guard", ["false", "github.event_name == 'workflow_dispatch'", "always()"]
+)
+def test_pull_request_coverage_job_cannot_be_guarded(
+    documents: Documents, guard: str
+) -> None:
+    """A job guard can switch the lane off while its step keeps its own guard."""
+    first_job(documents[LANE])["if"] = guard
+    assert_reports(coverage_violations, documents, "job must run unconditionally")
+
+
 def test_repository_selection_is_pinned(documents: Documents) -> None:
     """Both lanes changing their selection together would pass parity alone."""
     publisher, _ = find_publisher(documents)
@@ -286,6 +297,24 @@ def test_push_callee_cannot_write_a_second_baseline(documents: Documents) -> Non
     documents["caller.yml"] = {
         True: "push",
         "jobs": {"call": {"uses": "./.github/workflows/cov.yml"}},
+    }
+    assert_reports(
+        coverage_violations,
+        documents,
+        "cov.yml coverage can run on a push; guard it to pull requests",
+    )
+
+
+def test_publisher_callee_cannot_write_a_second_baseline(documents: Documents) -> None:
+    """The publisher's own local callee runs on its push, so its coverage counts."""
+    publisher, _ = find_publisher(documents)
+    step = copy.deepcopy(coverage_step(publisher))
+    documents["cov.yml"] = {
+        True: {"workflow_call": None},
+        "jobs": {"c": {"steps": [step]}},
+    }
+    typ.cast("dict[str, object]", publisher["jobs"])["call"] = {
+        "uses": "./.github/workflows/cov.yml"
     }
     assert_reports(
         coverage_violations,
