@@ -44,19 +44,22 @@ def environment_name(job: dict[str, object]) -> str | None:
             return None
 
 
-def _uploader_violations(documents: dict[str, Document]) -> tuple[list[str], set[int]]:
-    """Check each uploading job; return problems and the jobs' identities."""
-    uploads = upload_steps(documents)
-    if not uploads:
-        return ["no workflow job calls the CodeScene uploader"], set()
-    problems = []
-    holders = set()
-    for name, step in uploads:
-        job = holding_job(name, documents[name], step)
-        holders.add(id(job))
-        if environment_name(job) != ENVIRONMENT:
-            problems.append(f"{name}: {MISSING}")
-    return problems, holders
+def _placed(
+    documents: dict[str, Document], names: typ.Iterable[str]
+) -> list[tuple[str, dict[str, object]]]:
+    """Return ("workflow:job", job) for every job in the named workflows.
+
+    Returns
+    -------
+    list of tuple of (str, dict)
+        Each job with its location.
+
+    """
+    return [
+        (f"{name}:{job_id}", job)
+        for name in sorted(names)
+        for job_id, job in jobs(name, documents[name]).items()
+    ]
 
 
 def environment_violations(documents: dict[str, Document]) -> list[str]:
@@ -68,13 +71,24 @@ def environment_violations(documents: dict[str, Document]) -> list[str]:
         One message per violation; empty when the placement holds.
 
     """
-    problems, holders = _uploader_violations(documents)
-    for name, document in documents.items():
-        for job_id, job in jobs(name, document).items():
-            if id(job) not in holders and environment_name(job) == ENVIRONMENT:
-                problems.append(f"{name}:{job_id} {STRAY}")
-    for name, document in pull_request_closure(documents).items():
-        for job_id, job in jobs(name, document).items():
-            if environment_name(job) == ENVIRONMENT:
-                problems.append(f"{name}:{job_id} {REACHABLE}")
+    uploads = upload_steps(documents)
+    if not uploads:
+        return ["no workflow job calls the CodeScene uploader"]
+    holders = [holding_job(name, documents[name], step) for name, step in uploads]
+    held = {id(job) for job in holders}
+    problems = [
+        f"{name}: {MISSING}"
+        for (name, _), job in zip(uploads, holders, strict=True)
+        if environment_name(job) != ENVIRONMENT
+    ]
+    problems.extend(
+        f"{where} {STRAY}"
+        for where, job in _placed(documents, documents)
+        if id(job) not in held and environment_name(job) == ENVIRONMENT
+    )
+    problems.extend(
+        f"{where} {REACHABLE}"
+        for where, job in _placed(documents, pull_request_closure(documents))
+        if environment_name(job) == ENVIRONMENT
+    )
     return problems
