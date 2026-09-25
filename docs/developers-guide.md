@@ -169,6 +169,16 @@ hidden inside an extra conjunct fails the comparison without a separate scan.
 Each clause has a test that mutates the workflows and expects the clause to
 refuse the result.
 
+The publisher job declares `environment: codescene`. That environment admits
+deployments from `main` alone and is where the CodeScene token lives, so only
+the trunk publisher can read it.
+`tests/workflow_contracts/codescene_environment_rules.py` holds the placement:
+every uploading job declares the environment, as a string or as
+`{name: codescene}`; no other job declares it; and no workflow a pull request
+can start declares it in any job.
+`tests/workflow_contracts/codescene_environment_test.py` proves each clause by
+mutation.
+
 ## Tooling
 
 Development builds use the standard LLVM backend by default. On Linux targets,
