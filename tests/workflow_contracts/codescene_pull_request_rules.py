@@ -350,13 +350,24 @@ def _inherited_secrets(name: str, document: Document) -> list[str]:
 
 
 def _local_actions(name: str, document: Document) -> list[str]:
-    """Report each step in one workflow that runs a local action.
+    """Report each step in one workflow that runs this repository's action.
 
     A local action's `action.yml` is not read by these rules, so it could
-    reach CodeScene unseen; it is refused rather than followed.
+    reach CodeScene unseen; it is refused rather than followed. An action
+    named as this repository at a ref is refused alike, since it runs that
+    file from whichever branch the ref names.
     """
     return [
         f"{name} runs the local action {step['uses']}, which these rules cannot read"
         for step in steps(name, document)
-        if str(step.get("uses", "")).startswith(("./", "$/"))
+        if _is_own_action(str(step.get("uses", "")))
     ]
+
+
+def _is_own_action(uses: str) -> bool:
+    """Return whether a step's `uses:` runs an action from this repository."""
+    folded_uses = uses.casefold()
+    own = REPOSITORY.casefold()
+    return uses.startswith(("./", "$/")) or folded_uses.startswith(
+        (f"{own}/", f"{own}@")
+    )

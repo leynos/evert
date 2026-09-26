@@ -133,8 +133,12 @@ start runs in trigger order, so this does not guarantee commit order: an older
 run that starts late can publish its commit's coverage after a newer one, and
 the next push supersedes it. A manual re-run of an older run keeps its SHA and
 its run id: it republishes that commit's coverage to CodeScene, but replaces no
-ratchet baseline unless the original run saved none, because the shared action
-saves each baseline under a key that includes the run id.
+ratchet baseline while the original run's cache entry survives, because the
+shared action saves each baseline under a key that includes the run id. If that
+entry is gone, never saved or since evicted, the re-run saves the older
+commit's baseline again, the shared action restores the newest entry under the
+key prefix, and later ratchets read the older baseline until the next push
+saves a newer one. That stale-order risk is accepted.
 
 Two gaps are known and accepted, and both are tracked in
 [shared-actions issue 518](https://github.com/leynos/shared-actions/issues/518):
@@ -142,8 +146,11 @@ Two gaps are known and accepted, and both are tracked in
 - Merges made by the Dependabot automerge workflow use `GITHUB_TOKEN` and fire
   no push event, so they are measured only at the next push to `main` or a
   manual dispatch.
-- A dispatch that replaces a pending push uploads the same or a newer commit,
-  but leaves the ratchet baseline one commit behind until the next push.
+- A dispatch that replaces a pending push writes no baseline, since the shared
+  action saves one only on a push, so the ratchet baseline stays behind until
+  the next push. A dispatch made before a push can also reach the concurrency
+  group after it, replace it and upload the older commit; that is part of the
+  stale-order risk accepted above.
 
 No other workflow a push starts, directly or through a local call, may generate
 coverage outside the pull-request guard, and none, the publisher included, may
@@ -161,13 +168,14 @@ share in `codescene_workflow_text.py`. The rules read every workflow a pull
 request can start, from its own events, reviews and comments, a merge queue, or
 a push not confined to `main` or tags, following local reusable-workflow calls
 and `workflow_run` chains, and refuse any mention of the CodeScene host,
-uploader, client, or token there. They also refuse `continue-on-error` wherever
-it would turn a failed ratchet or upload green, and any `if:` on the job
-holding the pull-request coverage step, whose own guard already selects pull
-requests. The upload guard is compared as an exact set of conjuncts, so an `||`
-hidden inside an extra conjunct fails the comparison without a separate scan.
-Each clause has a test that mutates the workflows and expects the clause to
-refuse the result.
+uploader, client, or token there, and any local action or action named as this
+repository at a ref, whose `action.yml` they do not read. They also refuse
+`continue-on-error` wherever it would turn a failed ratchet or upload green,
+and any `if:` on the job holding the pull-request coverage step, whose own
+guard already selects pull requests. The upload guard is compared as an exact
+set of conjuncts, so an `||` hidden inside an extra conjunct fails the
+comparison without a separate scan. Each clause has a test that mutates the
+workflows and expects the clause to refuse the result.
 
 The publisher job declares `environment: codescene`. That environment admits
 deployments from `main` alone and is where the CodeScene token lives, so only
