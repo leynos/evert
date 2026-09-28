@@ -10,8 +10,8 @@ systems language look like if power stayed local, explicit, and non-contagious?
 
 The repository is currently a design and compiler-foundation project. There is
 no usable Evert compiler yet. The valuable artefacts are the terms of
-reference, design, roadmap, and ADRs that define the language thesis and the
-reference compiler plan.
+reference, design, roadmap, and Architecture Decision Records (ADRs) that
+define the language thesis and the reference compiler plan.
 
 ______________________________________________________________________
 
@@ -22,14 +22,15 @@ they become ambient defaults. Evert explores whether a language can make each
 powerful mechanism opt-in without losing the ability to write direct, readable,
 systems-capable code.
 
-- **Strict by default:** laziness is explicit, pure-only, and memoized.
-- **Effects are typed:** `pure fn` means an empty inferred effect row.
-- **Handlers, not monads, carry effects:** monads remain ordinary data
-  abstractions.
-- **Compiler evidence first:** a typed Core interpreter becomes the semantic
-  oracle before LLVM or native execution.
-- **Systems power is staged:** mutation, structured concurrency, capabilities,
-  ownership, and unsafe work have to earn their semantics before they execute.
+Evert evaluates strictly by default, with laziness available only as an
+explicit, opt-in construct. Effects are typed and interpreted by handlers
+rather than folded into the language's execution rules. Before any native code
+runs, a typed Core interpreter serves as the semantic reference that compiler
+work is checked against. Systems power such as mutation, structured
+concurrency, capabilities, ownership, and unsafe code is introduced in stages
+rather than granted up front. See the [Evert design](docs/evert-design.md) and
+[Evert context](docs/context.md) for the full semantics and terminology behind
+these choices.
 
 ______________________________________________________________________
 
@@ -40,6 +41,7 @@ the current research documentation with:
 
 ```shell
 make fmt
+make markdownlint
 make nixie
 ```
 
@@ -49,8 +51,8 @@ Then start with the design spine:
   stakeholders, constraints, and open questions.
 - [Evert design](docs/evert-design.md): the proposed language semantics and
   Rust reference compiler architecture.
-- [Roadmap](docs/roadmap.md): the planned implementation order, from ECLP
-  split to interpreter-backed compiler slices.
+- [Roadmap](docs/roadmap.md): the planned implementation order, from Evert
+  Core Language Proposal (ECLP) split to interpreter-backed compiler slices.
 - [ADRs](docs/contents.md#architecture-decisions): accepted decisions that
   constrain the design and roadmap.
 
@@ -64,7 +66,7 @@ questions.
 
 The current design concentrates on:
 
-- a lossless CST and recovery-capable parser,
+- a lossless concrete syntax tree (CST) and recovery-capable parser,
 - row-polymorphic effects and direct-style handlers,
 - explicit pure laziness with black-hole detection,
 - a small typed Core IR,
