@@ -216,9 +216,10 @@ LLVM IR
   tools (for inspectable golden tests), with an embedded backend (Inkwell, with
   `llvm-sys` or a small C++ bridge for gaps) introduced later.
 - The runtime is the implementer's responsibility: LLVM supplies stack maps and
-  statepoints but no garbage collector, so the runtime provides its own
-  non-moving tracing GC, shadow-stack roots, boxed closures/thunks, and a
-  C-compatible runtime ABI.
+  statepoints but no garbage collector, so the runtime provides its own memory
+  management, boxed closures/thunks, and a C-compatible runtime ABI. The MVP
+  heap model is a non-moving reference-counted heap; a non-moving tracing
+  collector with shadow-stack roots is planned later work (see 0.6.1 and 0.6.2).
 
 #### Deployment Target
 
@@ -326,13 +327,13 @@ viable but is the de-facto idiom for building a modern Rust-hosted compiler.
 ### 0.2.1 Technology Research
 
 **Lexing with Logos.** Logos is a derive-driven lexer generator whose stated
-goals are to make it easy to create a Lexer, so you can focus on more complex
-problems, and to make the generated Lexer faster than anything you'd write by
-hand. It achieves this because it combines all token definitions into a single
-deterministic state machine, optimizes branches into lookup tables or jump
-tables, prevents backtracking inside token definitions, unwinds loops and
-batches reads to minimize bounds checking, and does all of that heavy lifting
-at compile time. The current line emits tokens as a `Result`: the Lexer
+goals are to make it easy to create a Lexer, freeing developers to focus on
+more complex problems, and to make the generated Lexer faster than anything
+written by hand. It achieves this because it combines all token definitions
+into a single deterministic state machine, optimizes branches into lookup
+tables or jump tables, prevents backtracking inside token definitions, unwinds
+loops and batches reads to minimize bounds checking, and does all of that heavy
+lifting at compile time. The current line emits tokens as a `Result`: the Lexer
 produces a Result<Token, Token::Error> which removes the need for the #[error]
 variant, and whitespace/trivia are declared with the #[logos(skip …)]
 attribute. This directly supports FR-1 (spanned tokens) and the
@@ -365,13 +366,13 @@ recomputation, meaning it allows reusing computations that were already done in
 the past to increase the efficiency of future computations. Its proven pedigree
 is decisive: the goal of Salsa is to support efficient incremental
 recomputation, and Salsa is used in rust-analyzer, for example, to help it
-recompile your program quickly as you type. The modern API models the compiler
+recompile a program quickly as it is typed. The modern API models the compiler
 as inputs and tracked functions: every Salsa program begins with an input —
-special structs that define the starting point of your program — and everything
+special structs that define the starting point of a program — and everything
 else is ultimately a deterministic function of these inputs.
 
-**Code generation with LLVM via Inkwell.** Inkwell aims to help you pen your
-own programming languages by safely wrapping llvm-sys; it provides a more
+**Code generation with LLVM via Inkwell.** Inkwell aims to help developers pen
+their own programming languages by safely wrapping llvm-sys; it provides a more
 strongly typed interface than the underlying LLVM C API so that certain types
 of errors can be caught at compile time instead of at LLVM's runtime,
 replicating LLVM IR's strong typing as closely as possible. This is the
@@ -432,15 +433,17 @@ matrix that constrains the workspace.
 | LLVM           | 11–22 (pin one major)                 | Coupled to Inkwell feature flag.                                                                                                                                                                   |
 | Rust toolchain | 2024 edition, ≥ 1.85                  | Required by Inkwell 0.8.                                                                                                                                                                           |
 
+*Table 1: Verified dependency versions and compatibility constraints.*
+
 The binding constraint is the LLVM toolchain coupling. Inkwell requires Rust
 1.85+ and one of LLVM 11–22, selected by pointing Cargo.toml to a single LLVM
 version feature flag of the form llvmM-0 where M corresponds to the LLVM major
-version. Because you must have LLVM installed on your system and specify the
-version in your Cargo.toml dependencies, the LLVM backend is gated behind an
-optional Cargo feature so the front end and interpreter build with no native
-dependency — reinforcing the interpreter-first plan. Inkwell remains pre-1.0,
-and the maintainers note they may make breaking changes on master from time to
-time since they are pre-v1.0.0, in compliance with semver, so the dependency is
+version. Because LLVM must be installed on the system and the version specified
+in the Cargo.toml dependencies, the LLVM backend is gated behind an optional
+Cargo feature so the front end and interpreter build with no native dependency
+— reinforcing the interpreter-first plan. Inkwell remains pre-1.0, and the
+maintainers note they may make breaking changes on master from time to time
+since they are pre-v1.0.0, in compliance with semver, so the dependency is
 pinned to an exact minor version.
 
 **Supporting crates** selected to satisfy the implicit compiler-domain
@@ -547,6 +550,8 @@ flowchart TD
     DB -.orchestrates.-> CORE
     DRIVER["evert_driver: CLI + diagnostics"] --> DB
 ```
+
+*Figure 1: Evert compiler pipeline.*
 
 **Data flow architecture.** The compiler is organized as the Salsa query graph
 proposed by the user, preserved verbatim:
@@ -665,7 +670,7 @@ Rust module paths; the file-level breakdown appears in 0.5.
 - **Component I: `evert_runtime`**
   - Purpose: runtime values, lazy thunks (with black-hole detection and
     memoization), real Unicode `Text`, capability-mediated I/O, and the
-    non-moving collector.
+    non-moving reference-counted heap.
   - Location:
     `crates/evert_runtime/src/{value.rs, thunk.rs, text.rs, gc.rs, io.rs}`
 - **Component J: `evert_codegen_api`**
@@ -811,6 +816,8 @@ pub trait Backend {
 | `evert test`       | Run conformance and project tests                     | Drives the interpreter oracle    |
 | `evert fmt`        | Format source using the lossless CST                  | Layout/braces preserving         |
 | `evert repl`       | Interactive evaluation                                | Built on the interpreter         |
+
+*Table 2: `evert` driver commands.*
 
 There is no network or REST API surface; the only external interface beyond the
 CLI is the editor-facing diagnostic JSON and the (future) language-server query
@@ -1025,11 +1032,15 @@ of the tree.
   (FR-13); the tree-walking Core interpreter as the semantic oracle (FR-14);
   laziness with pure-only thunks, memoization, and black-hole detection (FR-9);
   `Functor`/`Monad` traits and `do` notation (FR-10); algebraic effects with
-  resumable handlers and `Throw<E>` (FR-11) for the MVP effect set (e.g.,
-  `Console`, `Clock`, `Throw`); and `mutate` regions with escape checking
-  (FR-12).
+  resumable handlers (FR-11) for the MVP effect set of `Throw<E>` and `Console`;
+  `Clock` stays staged until capability-authority conformance fixtures exist
+  (see docs/adr-004-effect-interface-sealing-gate.md and
+  docs/adr-005-capability-authority-staging.md); and `mutate` regions with
+  escape checking (FR-12).
 - **Runtime**: immutable values, thunks, real Unicode `Text`,
   capability-mediated I/O, and a non-moving reference-counted heap (FR-15).
+  This is the designated MVP heap model; see the "Advanced garbage collection"
+  entry in 0.6.2 for how cyclic lazy structures are handled under it.
 - **Diagnostics and CLI**: source-level, recovery-friendly diagnostics rendered
   via Ariadne, golden-tested as UI tests (FR-16); the single `evert` driver with
   `build`/`check`/`run`/`test`/`fmt`/`repl` (FR-17).
@@ -1068,9 +1079,13 @@ of the tree.
   not implemented in the MVP.
 - **Advanced garbage collection**: moving/generational collection and precise
   stack maps are out of scope; the MVP uses a non-moving reference-counted
-  heap, and the resulting potential for leaking cyclic lazy structures (e.g.,
-  `let rec ones = Next(1, lazy ones)`) is a documented, accepted limitation
-  pending a later tracing collector.
+  heap. Because reference counting does not reclaim cycles, the potential for
+  leaking cyclic lazy structures (e.g., `let rec ones = Next(1, lazy ones)`) is
+  a documented, accepted limitation for the MVP. The later non-moving tracing
+  collector (0.1.2, Integration Requirements) is expected to reclaim such
+  cycles once it ships. Note that docs/evert-design.md §10 defers the final
+  runtime heap strategy to later ADRs, so this reference plan is not binding on
+  that decision.
 - **Multi-shot continuations**: MVP handlers support one-shot resumption;
   cloning persistent continuation frames for multi-shot resumption is deferred.
 - **IDE / language-server (LSP) binary**: the query API is designed to enable
@@ -1124,6 +1139,8 @@ scaffold for deferred work).
 | `docs/grammar/evert.peglet`                                                             | Normative peglet grammar                        | Documentation  | High     |
 | `docs/architecture/pipeline.md`                                                         | Pipeline + query-graph docs                     | Documentation  | Medium   |
 | `README.md` / `CHANGELOG.md`                                                            | Overview, build/run, change log                 | Documentation  | High     |
+
+*Table 3: Representative deliverables by purpose, content type, and priority.*
 
 ### 0.7.2 Implementation Phases
 
