@@ -1,22 +1,25 @@
 # Evert roadmap
 
 This roadmap translates `docs/terms-of-reference.md`, `docs/evert-design.md`,
-and the accepted initial ADRs into an outcome-oriented delivery sequence. It
-does not promise dates. Each phase carries one testable idea. Steps work toward
-validating or falsifying that idea, and tasks are review-sized execution units
-with design citations.
+and the accepted initial Architecture Decision Records (ADRs) into an
+outcome-oriented delivery sequence. It does not promise dates. Each phase
+carries one testable idea. Steps work toward validating or falsifying that
+idea, and tasks are review-sized execution units with design citations.
 
-The roadmap assumes the GIST hierarchy: phases are ideas, steps are
-workstreams, and tasks are concrete units of work. Unit and behavioural tests
-belong inside implementation tasks; end-to-end, conformance, and combinatorial
-suites are first-class tasks when they validate a product surface or feature
-interaction.
+The roadmap assumes the Goals, Ideas, Steps, and Tasks (GIST) hierarchy
+described in the
+[documentation style guide](documentation-style-guide.md#hierarchy-of-scope):
+phases are ideas, steps are workstreams, and tasks are concrete units of work.
+Unit and behavioural tests belong inside implementation tasks; end-to-end,
+conformance, and combinatorial suites are first-class tasks when they validate
+a product surface or feature interaction.
 
 ## 1. Foundational contracts and build spine
 
-Idea: if Evert settles the ECLP boundary, crate architecture, and first
-conformance harness before feature work starts, later slices can validate
-language semantics without repeatedly reworking contracts.
+Idea: if Evert settles the Evert Core Language Proposal (ECLP) boundary (see
+[Evert context](context.md)), crate architecture, and first conformance harness
+before feature work starts, later slices can validate language semantics
+without repeatedly reworking contracts.
 
 This phase turns the generated repository into a compiler project without yet
 building a broad language surface. It validates the documentation and build
@@ -255,7 +258,9 @@ This step answers whether Evert can implement local power without making it
 ambient. See `docs/evert-design.md` §§8-10.
 
 - [ ] 4.3.1. Implement basic `Throw<E>` and `Console` handlers.
-  - Requires 4.2.1 and 3.2.2.
+  - Requires 4.2.1, 3.2.2, and 3.2.6.
+  - See `docs/adr-004-effect-interface-sealing-gate.md`; the 3.2.6
+    sealing-gate decision is recorded before handler implementation starts.
   - Success: direct-style effect examples execute through handlers and
     unhandled effects remain visible in the effect row.
 - [ ] 4.3.2. Implement pure lazy thunks with memoization and black-hole
@@ -347,9 +352,11 @@ earlier only through an ADR or RFC that explains the new dependency.
 
 - [ ] 6.2.1. Accept an RFC for nurseries, task cancellation, and `Task<T, E>`.
   - Requires phase 4.
-  - See `docs/evert-design.md` §§8 and 16.
-  - Success: the RFC states static capture rules, cancellation propagation, and
-    interpreter/runtime staging.
+  - See `docs/evert-design.md` §§8 and 16 and
+    `docs/adr-005-capability-authority-staging.md`.
+  - Success: the RFC states static capture rules, cancellation propagation,
+    and interpreter/runtime staging, and those task-scope capture rules are
+    the shared treatment that 6.3.2 relies on for capability authority.
 - [ ] 6.2.2. Accept an RFC for channels, actors, protocols, and reentrancy.
   - Requires 6.2.1.
   - Success: actor state isolation and protocol sendability are defined before
@@ -367,10 +374,14 @@ earlier only through an ADR or RFC that explains the new dependency.
     evidence, or the deferred ECLP states the remaining proof and runtime work.
 - [ ] 6.3.2. Accept an RFC for capability values, `Clock`, and
   handler-provided authority.
-  - Requires phase 4.
+  - Requires phase 4 and 6.2.1.
   - See `docs/adr-005-capability-authority-staging.md`.
   - Success: filesystem, network, clock, and unsafe authority cannot be
-    performed by naming a type alone.
+    performed by naming a type alone; the RFC specifies how authority is
+    captured by task scopes (using the 6.2.1 capture rules), how it
+    propagates, and how non-escape is preserved; and negative fixtures for
+    hidden authority, handler-provided authority, and capability escape are
+    added before `Clock` or richer authority advances toward execution.
 - [ ] 6.3.3. Accept an RFC for unsafe blocks and foreign-function interfaces.
   - Requires 6.3.2.
   - Success: unsafe contracts state aliasing, lifetime, layout, and threading
