@@ -27,7 +27,7 @@ mod ci_steps;
 mod config;
 #[path = "build_standard_support/make.rs"]
 mod make;
-use ci_steps::{install_mold_problems, workflow_problems};
+use ci_steps::{linker_install_problems, workflow_problems};
 use config::{CONFIG, Flags, Pin, Problems, THREADS_FLAG, TOOLCHAIN, config_problems};
 use make::{
     Assignment,
@@ -255,7 +255,7 @@ fn the_workflow_reader_wants_the_input_on_each_step(
     #[case] workflow: &str,
     #[case] expected: usize,
 ) -> Result<(), String> {
-    let found = install_mold_problems("fixture.yml", workflow).len();
+    let found = linker_install_problems("fixture.yml", workflow).len();
     if found == expected {
         Ok(())
     } else {
@@ -267,7 +267,7 @@ fn the_workflow_reader_wants_the_input_on_each_step(
 /// whose workflows do not set up Rust through `setup-rust` lists none, and the
 /// check then reads nothing; a listed workflow must have a step to read.
 #[test]
-fn every_setup_rust_step_installs_mold() -> Result<(), String> { none_of(&workflow_problems()) }
+fn every_setup_rust_step_installs_linker() -> Result<(), String> { none_of(&workflow_problems()) }
 
 /// Scenario: a recipe continued over lines, beside an `echo` and another command.
 ///

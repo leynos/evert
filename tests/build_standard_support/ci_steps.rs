@@ -77,7 +77,7 @@ fn step_lines<'a>(lines: &[&'a str], at: usize) -> Vec<&'a str> {
 }
 
 /// Returns whether a step passes `install-mold: 'true'` (quoted or bare).
-fn installs_mold(step: &[&str]) -> bool {
+fn installs_linker(step: &[&str]) -> bool {
     step.iter().any(|line| {
         let squeezed: String = line
             .chars()
@@ -95,13 +95,13 @@ fn installs_mold(step: &[&str]) -> bool {
 ///   with:
 ///     install-mold: 'true'      -> no complaint
 /// ```
-pub fn install_mold_problems(name: &str, workflow: &str) -> Problems {
+pub fn linker_install_problems(name: &str, workflow: &str) -> Problems {
     let lines: Vec<&str> = workflow.lines().collect();
     lines
         .iter()
         .enumerate()
         .filter(|(_, line)| line.contains("setup-rust@") && !line.trim_start().starts_with('#'))
-        .filter(|(at, _)| !installs_mold(&step_lines(&lines, *at)))
+        .filter(|(at, _)| !installs_linker(&step_lines(&lines, *at)))
         .map(|(at, _)| {
             format!(
                 "{name}:{}: a setup-rust step does not pass `install-mold: 'true'`",
@@ -114,7 +114,7 @@ pub fn install_mold_problems(name: &str, workflow: &str) -> Problems {
 /// Returns the complaints about one listed workflow: a step without the input,
 /// or no `setup-rust` step at all, which would leave the check reading nothing.
 fn listed_problems(name: &str, workflow: &str) -> Problems {
-    let mut problems = install_mold_problems(name, workflow);
+    let mut problems = linker_install_problems(name, workflow);
     if !workflow.contains("setup-rust@") {
         problems.push(format!(
             "{name}: the listed workflow has no setup-rust step, so the check proves nothing"
