@@ -30,18 +30,45 @@ fn code_lines(text: &str) -> impl Iterator<Item = &str> {
         .filter(|line| !line.is_empty())
 }
 
-/// Returns whether the workflow runs Cargo on the stable toolchain, either as
+/// Returns whether a command line invokes Cargo, or `cross`, with the `+stable`
+/// toolchain override as its first argument.
+///
+/// Only that shape counts: `+stable` in an `echo`, a URL or a comment is not a
+/// build, and reading it as one would report a key the release never reads.
+fn invokes_cargo_on_stable(line: &str) -> bool {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    words.windows(2).any(|pair| {
+        let [program, first_argument] = pair else {
+            return false;
+        };
+        let name = program.rsplit('/').next().unwrap_or_default();
+        matches!(name, "cargo" | "cross") && *first_argument == "+stable"
+    })
+}
+
+/// Returns whether the workflow builds on the stable toolchain, either through
 /// `cargo +stable` / `cross +stable` or by installing `stable` through a
 /// toolchain action's `toolchain` input.
 fn builds_on_stable(workflow: &str) -> bool {
     code_lines(workflow)
-        .any(|line| line.contains("+stable") || line.replace(' ', "") == "toolchain:stable")
+        .any(|line| invokes_cargo_on_stable(line) || line.replace(' ', "") == "toolchain:stable")
 }
 
 /// Returns the configuration lines that select or enable a codegen backend.
+///
+/// The key is matched wherever it sits in the file, so a nested table such as
+/// `[profile.dev.package.foo]` or `[profile.dev.build-override]`, an inline
+/// table, and a quoted key are reported as well as `[profile.dev]` and
+/// `[unstable]`. Cargo refuses every one of them on stable.
 fn backend_keys(config: &str) -> Vec<&str> {
     code_lines(config)
-        .filter(|line| line.replace(' ', "").starts_with("codegen-backend="))
+        .filter(|line| {
+            let squeezed: String = line
+                .chars()
+                .filter(|c| !matches!(c, ' ' | '"' | '\''))
+                .collect();
+            squeezed.contains("codegen-backend=")
+        })
         .collect()
 }
 
@@ -65,15 +92,25 @@ const STABLE_TOOLCHAIN_ACTION: &str = concat!(
     "steps:\n  - uses: actions-rust-lang/setup-rust-toolchain@abc\n",
     "    with:\n      toolchain: stable\n  - run: cargo build --release\n"
 );
+/// A release workflow installing the pinned nightly through a toolchain action.
+const NIGHTLY_TOOLCHAIN_ACTION: &str = concat!(
+    "steps:\n  - uses: actions-rust-lang/setup-rust-toolchain@abc\n",
+    "    with:\n      toolchain: nightly-2026-05-28\n  - run: cargo build --release\n"
+);
+/// A release workflow that mentions `+stable` in a command that builds nothing.
+const STABLE_IN_AN_ECHO: &str =
+    "steps:\n  - run: echo +stable is not a toolchain\n  - run: cargo build --release\n";
+/// A release workflow invoking Cargo by absolute path on stable.
+const STABLE_BY_PATH: &str = "steps:\n  - run: /root/.cargo/bin/cargo +stable build --release\n";
 /// A release workflow that mentions stable only in a comment.
 const STABLE_IN_A_COMMENT: &str =
-    "steps:\n  # Do not use +stable here.\n  - run: cross build --release\n";
+    "steps:\n  # Was: cross +stable build --release\n  - run: cross build --release\n";
 /// The configuration shape a Cranelift default takes.
 const CRANELIFT: &str =
     "[unstable]\ncodegen-backend = true\n\n[profile.dev]\ncodegen-backend = \"cranelift\"\n";
 /// A configuration with a linker table and a comment naming the key.
 const LINKER_ONLY: &str = concat!(
-    "# codegen-backend is deliberately absent.\n",
+    "# codegen-backend = \"cranelift\" is deliberately absent.\n",
     "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n"
 );
 
@@ -88,7 +125,30 @@ const LINKER_ONLY: &str = concat!(
 #[case::cranelift_with_stable_toolchain_action(CRANELIFT, STABLE_TOOLCHAIN_ACTION, 2)]
 #[case::profile_key_alone("[profile.dev]\ncodegen-backend = \"cranelift\"\n", STABLE_RELEASE, 1)]
 #[case::release_profile_key("[profile.release]\ncodegen-backend=\"llvm\"\n", STABLE_RELEASE, 1)]
+#[case::nested_package_table(
+    "[profile.dev.package.foo]\ncodegen-backend = \"llvm\"\n",
+    STABLE_RELEASE,
+    1
+)]
+#[case::build_override_table(
+    "[profile.dev.build-override]\ncodegen-backend=\"llvm\"\n",
+    STABLE_RELEASE,
+    1
+)]
+#[case::inline_table(
+    "profile = { dev = { codegen-backend = \"cranelift\" } }\n",
+    STABLE_RELEASE,
+    1
+)]
+#[case::quoted_key(
+    "[profile.dev]\n\"codegen-backend\" = \"cranelift\"\n",
+    STABLE_RELEASE,
+    1
+)]
+#[case::cargo_invoked_by_path(CRANELIFT, STABLE_BY_PATH, 2)]
 #[case::linker_only_with_stable_release(LINKER_ONLY, STABLE_RELEASE, 0)]
+#[case::cranelift_with_nightly_toolchain_action(CRANELIFT, NIGHTLY_TOOLCHAIN_ACTION, 0)]
+#[case::stable_named_only_in_an_echo(CRANELIFT, STABLE_IN_AN_ECHO, 0)]
 #[case::cranelift_with_nightly_release(CRANELIFT, NIGHTLY_RELEASE, 0)]
 #[case::stable_named_only_in_a_comment(CRANELIFT, STABLE_IN_A_COMMENT, 0)]
 fn a_backend_key_is_refused_only_beside_a_stable_release(
