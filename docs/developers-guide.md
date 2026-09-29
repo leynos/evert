@@ -216,7 +216,14 @@ standard make targets select Cranelift instead, by passing
 `--config tools/dev-fast/config.toml`, which holds only the backend selection;
 coverage and release builds never pass it. A contract fails if a
 `codegen-backend` key reaches `.cargo/config.toml` while the release builds on
-`+stable`. Revisit if the release moves to the pinned nightly.
+`+stable`. `tests/stable_cargo_config.rs` also asks stable Cargo itself, through
+`rustup run stable cargo build --release --bin no-such-bin`: stable Cargo
+resolves every configured profile before it looks up the target, so a refused
+configuration and an accepted one differ in the message, and nothing compiles.
+The probe must run on stable, because a nightly Cargo accepts a backend that
+stable refuses. The test therefore needs the stable toolchain installed
+(`rustup toolchain install stable --profile minimal`); CI installs it before
+the tests run. Revisit if the release moves to the pinned nightly.
 
 ## Tooling
 

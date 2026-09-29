@@ -22,6 +22,10 @@ jobs:
         uses: leynos/shared-actions/.github/actions/setup-rust@8a83824b29dfe8f861714b544dc85fb925ed010c
         with:
           install-mold: 'true'
+      - name: Install the stable toolchain
+        # tests/stable_cargo_config.rs runs stable Cargo, the toolchain the
+        # release builds with, against .cargo/config.toml.
+        run: rustup toolchain install stable --profile minimal
       - name: Install mold linker
         if: runner.os == 'Linux'
         run: |
