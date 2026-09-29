@@ -42,7 +42,7 @@ jobs:
         with:
           globs: '**/*.md'
       - name: Setup uv
-        uses: astral-sh/setup-uv@f5548c55522a1db0af3c84f2af3d058bc9bc2de2
+        uses: astral-sh/setup-uv@bcf05803b55ef01a5ec6368521ee1b42f97bc438
       - name: Spelling
         run: make spelling
       - name: Install test runner
