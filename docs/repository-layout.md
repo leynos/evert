@@ -87,9 +87,11 @@ compact and omits build output such as `target/`.
   replace it.
 - `tests/workflow_contracts/`: Holds the pytest contract tests for the
   workflow files, run by `make test-workflow-contracts`.
-- `tools/dev-fast/config.toml`: Configures the opt-in accelerated debug build
-  (Cranelift plus `mold`), applied explicitly via `make dev-build` and
-  `make dev-test`; never merged into `.cargo/config.toml`.
+- `tools/dev-fast/config.toml`: Cargo configuration fragment that selects the
+  Cranelift codegen backend for the standard make targets and `make dev-build`/
+  `make dev-test`. Passed explicitly with `--config` rather than placed under
+  `.cargo/`, because the release builds on stable, which refuses a backend key
+  there; it never affects release, coverage, or verification builds.
 - `AGENTS.md`: Provides repository-specific working instructions for agents and
   contributors.
 - `Cargo.toml`: Defines package metadata, dependencies, lint policy, and Cargo
