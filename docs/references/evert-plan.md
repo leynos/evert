@@ -335,9 +335,12 @@ tables or jump tables, prevents backtracking inside token definitions, unwinds
 loops and batches reads to minimize bounds checking, and does all of that heavy
 lifting at compile time. The current line emits tokens as a `Result`: the Lexer
 produces a Result<Token, Token::Error> which removes the need for the #[error]
-variant, and whitespace/trivia are declared with the #[logos(skip …)]
-attribute. This directly supports FR-1 (spanned tokens) and the
-trivia-retention requirement.
+variant. This directly supports FR-1 (spanned tokens). The `#[logos(skip …)]`
+attribute omits matching lexemes from the lexer output, so to meet FR-1 and the
+trivia-retention requirement, the lexer or CST builder must preserve the
+skipped spans, either by emitting whitespace and comments as explicit trivia
+tokens or by reconstructing the source gaps between token spans, so that the
+CST stays lossless.
 
 **Parsing with Chumsky.** Chumsky is a parser library for Rust that makes
 writing expressive, high-performance parsers easy. Critically for Evert's
@@ -476,9 +479,10 @@ format — are addressed in the architecture and interface sub-sections.
 - **Lexer: Logos 0.16.x** — Rationale: it compiles token definitions into a
   single deterministic state machine for hand-written-beating speed, and the
   0.16 engine rewrite prioritizes regex correctness with an MSRV of 1.80,
-  comfortably within our 1.85 floor. It emits `Result<Token, Error>` and
-  declares trivia via `#[logos(skip ...)]`, exactly matching ECLP-0002's
-  token/trivia split.
+  comfortably within our 1.85 floor. It produces `Result<Token, Error>`; trivia
+  is either lexed as explicit trivia tokens or skipped with
+  `#[logos(skip ...)]` and recovered from token-span gaps, preserving
+  ECLP-0002's token/trivia split for the lossless CST.
 - **Parser: Chumsky 0.11.x** — Rationale: it is a recursive-descent/PEG
   combinator library — aligning with the `peglet` ordered-choice semantics —
   with first-class error recovery and native support for context-sensitive
