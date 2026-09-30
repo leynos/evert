@@ -17,11 +17,15 @@ including the linker configuration and the opt-in accelerated build path.
 
 The generated `Makefile` exposes these public targets:
 
-- `make all` runs formatting checks, linting, and tests.
+- `make all` runs formatting checks, linting, tests, spelling, and the
+  workflow contracts.
 - `make check-fmt` verifies Rust formatting.
 - `make lint` runs rustdoc, Clippy, and Whitaker with warnings denied.
 - `make test` runs `cargo nextest run` when cargo-nextest is installed and
   falls back to `cargo test` otherwise. All projects also run doctests.
+- `make test-workflow-contracts` runs the shared `cv005-contracts` checks
+  against the repository's workflows. It needs `uv`, which fetches the Python
+  3.13 the checks run under.
 - `make build` builds the debug target.
 - `make dev-build` builds the debug target using the opt-in accelerated
   build configuration described in the [developers' guide](developers-guide.md).
