@@ -24,6 +24,7 @@ jobs:
         uses: leynos/shared-actions/.github/actions/setup-rust@22c1a57865e42ba7e2ca4f88ae49fa6f81f58013
       - name: Install cargo-audit
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           RUSTFLAGS: ""
         run: cargo binstall --no-confirm cargo-audit
       - name: Setup Python for audit manifest extraction
