@@ -47,7 +47,7 @@ fn judge(stderr: &str) -> Result<(), String> {
 /// Scenario: the diagnostics stable Cargo prints for the probe in each state.
 ///
 /// Invariant: only the missing-target message passes; a refused profile and
-/// unrecognised output, such as a missing toolchain, both fail.
+/// unrecognized output, such as a missing toolchain, both fail.
 #[rstest]
 #[case::configuration_loaded("error: no bin target named `no-such-bin`\n", true)]
 #[case::profile_refused(

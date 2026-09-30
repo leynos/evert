@@ -22,12 +22,27 @@ const RELEASE_WORKFLOW: &str = include_str!(concat!(
 
 /// Returns the lines of `text` with comments removed and blanks dropped.
 ///
-/// A `#` starts a comment in both TOML and YAML. Cutting at the first `#` is
-/// safe for the keys and commands sought here, none of which contains one.
+/// A `#` starts a comment in both TOML and YAML, unless it sits inside a quoted
+/// string, where it is part of the value and a later key must still be seen.
 fn code_lines(text: &str) -> impl Iterator<Item = &str> {
     text.lines()
-        .map(|line| line.split('#').next().unwrap_or_default().trim())
+        .map(without_comment)
         .filter(|line| !line.is_empty())
+}
+
+/// Returns a line up to a `#` that starts a comment, ignoring one inside a
+/// quoted string, without surrounding space.
+fn without_comment(line: &str) -> &str {
+    let mut quote: Option<char> = None;
+    for (index, c) in line.char_indices() {
+        match (quote, c) {
+            (None, '"' | '\'') => quote = Some(c),
+            (Some(open), _) if c == open => quote = None,
+            (None, '#') => return line.get(..index).unwrap_or(line).trim(),
+            _ => {}
+        }
+    }
+    line.trim()
 }
 
 /// Returns the toolchain override (`+stable`, `+nightly-2026-05-28`) a command
@@ -56,7 +71,8 @@ fn cargo_override(line: &str) -> Option<&str> {
 fn builds_on_stable(workflow: &str) -> bool {
     let overrides: Vec<&str> = code_lines(workflow).filter_map(cargo_override).collect();
     if overrides.is_empty() {
-        return code_lines(workflow).any(|line| line.replace(' ', "") == "toolchain:stable");
+        let squeezed = |line: &str| line.replace([' ', '\t', '"', '\''], "");
+        return code_lines(workflow).any(|line| squeezed(line) == "toolchain:stable");
     }
     overrides.contains(&"stable")
 }
@@ -134,6 +150,12 @@ const STABLE_ACTION_NIGHTLY_COMMAND: &str = concat!(
     "steps:\n  - uses: actions-rust-lang/setup-rust-toolchain@abc\n",
     "    with:\n      toolchain: stable\n  - run: cross +nightly-2026-05-28 build --release\n"
 );
+/// A release workflow installing stable through a toolchain action, with the
+/// value quoted.
+const STABLE_TOOLCHAIN_QUOTED: &str = concat!(
+    "steps:\n  - uses: actions-rust-lang/setup-rust-toolchain@abc\n",
+    "    with:\n      toolchain: \"stable\"\n  - run: cargo build --release\n"
+);
 /// A release workflow that mentions `+stable` in a command that builds nothing.
 const STABLE_IN_AN_ECHO: &str =
     "steps:\n  - run: echo +stable is not a toolchain\n  - run: cargo build --release\n";
@@ -183,6 +205,17 @@ const LINKER_ONLY: &str = concat!(
     1
 )]
 #[case::cargo_invoked_by_path(CRANELIFT, STABLE_BY_PATH, 2)]
+#[case::stable_toolchain_action_with_a_quoted_value(CRANELIFT, STABLE_TOOLCHAIN_QUOTED, 2)]
+#[case::key_after_a_hash_inside_a_quoted_value(
+    "profile = { hint = \"value # text\", codegen-backend = \"cranelift\" }\n",
+    STABLE_RELEASE,
+    1
+)]
+#[case::comment_after_the_key(
+    "[profile.dev]\ncodegen-backend = \"cranelift\" # a comment\n",
+    STABLE_RELEASE,
+    1
+)]
 #[case::inline_table_entry_after_a_comma(
     "profile = { dev = { opt-level = 1, codegen-backend = \"cranelift\" } }\n",
     STABLE_RELEASE,
