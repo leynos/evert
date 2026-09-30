@@ -13,7 +13,6 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       BUILD_PROFILE: debug
-      WHITAKER_INSTALLER_VERSION: '0.2.7'
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
@@ -67,34 +66,10 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.x'
-      - name: Cache Whitaker installer
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: |
-            ~/.cargo/bin/whitaker-installer
-            ~/.cache/cargo-binstall
-          key: whitaker-installer-${{ runner.os }}-${{ runner.arch }}-${{ env.WHITAKER_INSTALLER_VERSION }}
       - name: Install Whitaker
-        env:
-          RUSTFLAGS: ""
-        run: |
-          set -euo pipefail
-          if command -v whitaker-installer >/dev/null 2>&1; then
-            echo "whitaker-installer already present; skipping cargo binstall"
-          else
-            cargo binstall --no-confirm --locked "whitaker-installer@${WHITAKER_INSTALLER_VERSION}"
-          fi
-          # --cranelift provisions rustc-codegen-cranelift on Whitaker's own
-          # pinned toolchain, kept separate from this project's toolchain
-          # pin. This project's debug builds use Cranelift only via the
-          # opt-in tools/dev-fast/config.toml fragment, which the
-          # build/test/lint/typecheck Makefile targets pass explicitly with
-          # --config; .cargo/config.toml no longer sets a codegen backend
-          # (it configures the mold linker only). The Lint step's Whitaker
-          # invocation does not pass --config, so it lints under the
-          # default LLVM backend regardless of this provisioning.
-
-          whitaker-installer --cranelift
+        uses: leynos/shared-actions/.github/actions/install-whitaker@6dea5677a84fec60ca51b07202570e3af12ffdb4
+        with:
+          cranelift: true
       - name: Audit dependencies
         if: github.actor != 'dependabot[bot]'
         run: make audit
