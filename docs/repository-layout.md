@@ -85,8 +85,9 @@ compact and omits build output such as `target/`.
   behaviour.
 - `tests/stub.rs`: Keeps the generated test directory valid until real tests
   replace it.
-- `tests/workflow_contracts/`: Holds the pytest contract tests for the
-  workflow files, run by `make test-workflow-contracts`.
+- `tests/workflow_contracts/`: Holds the pytest contract for the
+  mutation-testing caller workflow, run by `make test-workflow-contracts`,
+  which also runs the shared CV-005 contract library.
 - `tools/dev-fast/config.toml`: Configures the opt-in accelerated debug build
   (Cranelift plus `mold`), applied explicitly via `make dev-build` and
   `make dev-test`; never merged into `.cargo/config.toml`.
