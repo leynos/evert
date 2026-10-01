@@ -479,10 +479,10 @@ format — are addressed in the architecture and interface sub-sections.
 - **Lexer: Logos 0.16.x** — Rationale: it compiles token definitions into a
   single deterministic state machine for hand-written-beating speed, and the
   0.16 engine rewrite prioritizes regex correctness with an MSRV of 1.80,
-  comfortably within our 1.85 floor. It produces `Result<Token, Error>`; trivia
-  is either lexed as explicit trivia tokens or skipped with
-  `#[logos(skip ...)]` and recovered from token-span gaps, preserving
-  ECLP-0002's token/trivia split for the lossless CST.
+  comfortably within the project's 1.85 floor. It produces
+  `Result<Token, Error>`; trivia is either lexed as explicit trivia tokens or
+  skipped with `#[logos(skip ...)]` and recovered from token-span gaps,
+  preserving ECLP-0002's token/trivia split for the lossless CST.
 - **Parser: Chumsky 0.11.x** — Rationale: it is a recursive-descent/PEG
   combinator library — aligning with the `peglet` ordered-choice semantics —
   with first-class error recovery and native support for context-sensitive
