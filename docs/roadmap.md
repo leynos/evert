@@ -262,7 +262,8 @@ ambient. See `docs/evert-design.md` §§8-10.
   - See `docs/adr-004-effect-interface-sealing-gate.md`; the 3.2.6
     sealing-gate decision is recorded before handler implementation starts.
   - Success: direct-style effect examples execute through handlers and
-    unhandled effects remain visible in the effect row.
+    unhandled effects remain visible in the effect row, and `Console` output
+    reaches the execution host as explicit events.
 - [ ] 4.3.2. Implement pure lazy thunks with memoization and black-hole
   detection.
   - Requires 4.2.1.
@@ -278,7 +279,8 @@ ambient. See `docs/evert-design.md` §§8-10.
   `evert dump core`.
   - Requires 4.3.1-4.3.3.
   - Success: one command validates the complete parser-to-interpreter loop for
-    representative examples.
+    representative examples, with `evert run` executing through the
+    `ExecutionHost` port.
 
 ## 5. Vertical slice 4: Tooling surface and package workflow
 

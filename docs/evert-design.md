@@ -174,7 +174,8 @@ source text
   -> interpreter or backend port
 ```
 
-The pipeline is query-based. Each stage consumes stable outputs from earlier
+The pipeline is query-based from analysis through lowering; execution is
+outside the query graph. Each stage consumes stable outputs from earlier
 queries and returns immutable values suitable for memoization and testing. The
 driver owns source input mutation. Query functions are deterministic over their
 inputs.
@@ -193,8 +194,12 @@ inferred_signature(DefId)
 typed_body(DefId)
 core_body(DefId)
 lowered_body(DefId)
-interpreted_entry(EntryPointId)
 ```
+
+Execution is not a query. The driver obtains `lowered_body` results from the
+database and passes them to the interpreter through the `ExecutionHost` port
+(see section 11); interpreter and runtime outputs never enter the Salsa
+database.
 
 Backend-specific queries are not in the MVP graph. Native code generation
 starts as an adapter over lowered modules once the interpreter can execute the
@@ -391,15 +396,20 @@ semantics, not the final native runtime strategy. Reference counting, tracing,
 stack maps, moving collection, and statepoints are backend/runtime design
 questions for later ADRs.
 
+The interpreter takes lowered Core plus an `ExecutionHost` and returns either a
+typed result or a typed `ExecutionError`, together with the host events it
+recorded (for example `Console` writes). Effect output is therefore explicit
+rather than a hidden side effect.
+
 ## 11. Ports and adapters
 
-| Port           | Owner                | Adapter examples                                         |
-| -------------- | -------------------- | -------------------------------------------------------- |
-| Source loading | Compiler application | Filesystem source adapter, in-memory test adapter        |
-| Diagnostics    | Compiler application | Ariadne renderer, JSON renderer, snapshot renderer       |
-| Execution host | Interpreter/runtime  | Console host, deterministic test host, staged clock host |
-| Backend        | `evert_codegen_api`  | Textual LLVM adapter, Inkwell adapter                    |
-| Package source | Driver/application   | Local manifest adapter, future registry adapter          |
+| Port                             | Owner                | Adapter examples                                         |
+| -------------------------------- | -------------------- | -------------------------------------------------------- |
+| Source loading                   | Compiler application | Filesystem source adapter, in-memory test adapter        |
+| Diagnostics                      | Compiler application | Ariadne renderer, JSON renderer, snapshot renderer       |
+| Execution host (`ExecutionHost`) | Interpreter/runtime  | Console host, deterministic test host, staged clock host |
+| Backend                          | `evert_codegen_api`  | Textual LLVM adapter, Inkwell adapter                    |
+| Package source                   | Driver/application   | Local manifest adapter, future registry adapter          |
 
 _Table 3: Ports and adapters._
 
@@ -408,16 +418,21 @@ at the edge. The CLI may use `eyre` or another opaque boundary error, but
 library crates expose typed error enums where callers can inspect, retry, or
 map failures.
 
+`ExecutionHost` and the interpreter report failures as a typed `ExecutionError`
+enum rather than an opaque error. Examples are black-hole detection, an
+unhandled effect, a host failure, or an escaping `Throw<E>`. Only the CLI
+adapter converts these to `eyre`.
+
 ## 12. Command-line contract
 
 The `evert` command is the first user-facing adapter. The MVP surface is:
 
-| Command                     | Purpose                                                   |
-| --------------------------- | --------------------------------------------------------- |
-| `evert check <path>`        | Run front-end and semantic checks and report diagnostics. |
-| `evert run <path>`          | Execute an entry point through the Core interpreter.      |
-| `evert fmt <path>`          | Format source through the lossless CST.                   |
-| `evert dump <stage> <path>` | Print tokens, CST, HIR, Core, or lowered Core for review. |
+| Command                     | Purpose                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| `evert check <path>`        | Run front-end and semantic checks and report diagnostics.                           |
+| `evert run <path>`          | Execute an entry point through the Core interpreter and an `ExecutionHost` adapter. |
+| `evert fmt <path>`          | Format source through the lossless CST.                                             |
+| `evert dump <stage> <path>` | Print tokens, CST, HIR, Core, or lowered Core for review.                           |
 
 _Table 4: Initial command-line surface._
 
