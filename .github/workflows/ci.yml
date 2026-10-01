@@ -79,6 +79,8 @@ jobs:
         run: make audit
       - name: Lint
         run: make lint
+      - name: Typecheck
+        run: make typecheck
       - name: Workflow contract tests
         run: make test-workflow-contracts
       - name: Log coverage linker configuration

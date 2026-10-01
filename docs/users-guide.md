@@ -27,7 +27,10 @@ The generated `Makefile` exposes these public targets:
   falls back to `cargo test` otherwise. All projects also run doctests.
 - `make test-workflow-contracts` runs the shared CV-005 workflow checks and
   the repository's pytest workflow contracts. It needs `uv`.
-- `make typecheck` checks all targets and features without building binaries.
+- `make typecheck` checks the build tools, type-checks the Python sources with
+  ty, then checks all Rust targets and features without building binaries.
+- `make typecheck-python` and `make typecheck-rust` run only the Python or only
+  the Rust half.
 - `make build` builds the debug target.
 - `make install-build-tools` installs the pinned Rust toolchain and local
   linker tools needed by the standard development build.
@@ -48,6 +51,7 @@ target need `$BUILD_TOOLS_PREFIX/bin` on `PATH`; Make targets add it
 automatically. Other Linux targets use their platform linker, while non-Linux
 targets keep their platform linker. Install clang, python3, and cargo-audit
 before running the full generated workflow locally on Linux; coverage also
-requires lld. The Python linters and workflow contract tests use `uv`, which
-fetches CPython 3.14 on demand. The [developers' guide](developers-guide.md)
-describes the backend and linker routing.
+requires lld. The Python linters, the Python type check, and workflow contract
+tests use `uv`, which fetches CPython 3.14 on demand. The
+[developers' guide](developers-guide.md) describes the backend and linker
+routing.

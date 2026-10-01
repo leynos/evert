@@ -11,6 +11,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from workflow_contract_support import fresh_documents, steps
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = REPOSITORY_ROOT / "Makefile"
@@ -22,7 +23,12 @@ PYPROJECT = REPOSITORY_ROOT / "pyproject.toml"
 DEFAULT_EXCLUDES = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__"})
 
 GATEWAY_COMMANDS = ("RUFF", "PYLINT", "DF12_PYLINT", "AMBRLEAKS", "INTERROGATE")
-PINNED_TOOLS = ("RUFF_VERSION", "PYLINT_VERSION", "INTERROGATE_VERSION")
+PINNED_TOOLS = (
+    "RUFF_VERSION",
+    "PYLINT_VERSION",
+    "INTERROGATE_VERSION",
+    "TY_VERSION",
+)
 
 
 def _makefile_lines() -> list[str]:
@@ -192,3 +198,44 @@ def test_df12_lints_are_pinned_to_a_commit() -> None:
     assert re.fullmatch(r"[0-9a-f]{40}", reference), (
         f"DF12_PYTHON_LINTS_REF must be a full commit hash, found {reference!r}"
     )
+
+
+@pytest.mark.parametrize("prerequisite", ["typecheck-python", "typecheck-rust"])
+def test_typecheck_reaches_both_type_checks(prerequisite: str) -> None:
+    """`make typecheck`, which CI runs, must run the Python and Rust checks."""
+    declaration = next(
+        (line for line in _makefile_lines() if line.startswith("typecheck:")),
+        None,
+    )
+    assert declaration is not None, "Makefile does not define typecheck"
+    prerequisites = declaration.removeprefix("typecheck:").split("##", 1)[0].split()
+    assert prerequisite in prerequisites, (
+        f"typecheck must depend on {prerequisite}, found {prerequisites}"
+    )
+
+
+@pytest.mark.parametrize(
+    "fragment",
+    [
+        pytest.param("ty check", id="runs-ty"),
+        pytest.param("--from ty==$(TY_VERSION)", id="pinned-ty"),
+        pytest.param("--python $(PYTHON_BASELINE)", id="interpreter-baseline"),
+        pytest.param("--python-version $(PYTHON_BASELINE)", id="language-baseline"),
+        pytest.param("$(PYTHON_SOURCES)", id="same-roots-as-the-linters"),
+    ],
+)
+def test_typecheck_python_recipe_holds_its_contract(fragment: str) -> None:
+    """The `typecheck-python` recipe must keep the baseline, pin, and roots."""
+    assert fragment in _recipe("typecheck-python"), (
+        f"typecheck-python must contain `{fragment}`"
+    )
+
+
+def test_ci_runs_the_typecheck_gate() -> None:
+    """A pull request must not merge without the Python and Rust type checks."""
+    commands = [
+        run
+        for step in steps("ci.yml", fresh_documents()["ci.yml"])
+        if isinstance(run := step.get("run"), str)
+    ]
+    assert "make typecheck" in commands, "ci.yml must run `make typecheck`"

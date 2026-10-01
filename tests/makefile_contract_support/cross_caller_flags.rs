@@ -32,7 +32,7 @@ fn make_cross_route(
         command.arg("--silent");
     }
     command.args([
-        "typecheck",
+        "typecheck-rust",
         "BUILD_HOST_OS=Linux",
         "BUILD_HOST_ARCH=x86_64",
         "CARGO_BUILD_TARGET=aarch64-unknown-linux-gnu",
@@ -233,7 +233,7 @@ fn native_route_keeps_the_development_flag() {
         "--old-file=check-build-tools",
         "--no-print-directory",
         "--silent",
-        "typecheck",
+        "typecheck-rust",
         "BUILD_HOST_OS=Linux",
         "BUILD_HOST_ARCH=x86_64",
         "CARGO=sh -c 'printf \"observed=%s\\n\" \"$$RUSTFLAGS\"'",

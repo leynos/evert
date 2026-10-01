@@ -78,7 +78,8 @@ compact and omits build output such as `target/`.
 │       ├── supported_route_rules.py
 │       ├── whitaker_provisioning_rules.py
 │       ├── whitaker_provisioning_test.py
-│       └── workflow_contract_support.py
+│       ├── workflow_contract_support.py
+│       └── workflow_contract_support_test.py
 ├── tools/
 │   └── mold/
 │       ├── SHA256SUMS

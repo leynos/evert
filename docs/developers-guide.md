@@ -110,7 +110,50 @@ repository's file-size ceiling.
 fails if a Python file sits outside the source roots, if the three baseline
 settings disagree, if `lint` stops depending on `lint-python`, if a tool is
 missing from the recipe, or if a tool version or the df12 ref is not an exact
-pin.
+pin. It also guards the [Python typecheck](#python-typechecking).
+
+## Python typechecking
+
+`make typecheck` runs the build-tools preflight, so a missing pinned tool stops
+the gate before any type check, then type-checks the Python sources with ty,
+then runs the Rust `cargo check` over all targets and features.
+`make typecheck-python` and `make typecheck-rust` run only one half; the Rust
+contract tests that run the Cargo route for real use `typecheck-rust`, so ty
+output cannot reach the output they compare. CI runs `make typecheck` in a
+`Typecheck` step right after `Lint` in `.github/workflows/ci.yml`.
+
+ty is pinned exactly by `TY_VERSION` (0.0.74) in the `Makefile`. It is pre-1.0
+and its diagnostics shift between releases, so to bump it, change `TY_VERSION`
+and fix any new diagnostics in the same commit. It runs through `uv tool run`
+on CPython 3.14 (`PYTHON_BASELINE`), with `--python-version` set to the same
+baseline. `TY_DEPENDENCIES` installs the packages the sources import (pytest
+9.0.2 and PyYAML) into the tool environment so ty can resolve them.
+
+The check covers `PYTHON_SOURCES`, built from the same `PYTHON_SOURCE_ROOTS` as
+the linters, so a Python file cannot be linted yet left untyped. The modules in
+`tests/workflow_contracts/` import their siblings through the directory pytest
+puts on `sys.path`, which ty does not follow. `PYTHON_IMPORT_ROOTS` therefore
+passes whichever of `tests/workflow_contracts`, `scripts`, and
+`.github/scripts` exist as `--extra-search-path` roots.
+
+Do not silence a type error: no `# type: ignore`, no `# ty: ignore`, and no
+`typing.Any` escape hatches. Workflow YAML loads as loosely typed objects, so
+tests narrow it with the runtime-validated helpers in
+`tests/workflow_contracts/workflow_contract_support.py`:
+
+- `mapping_at(node, *path)` returns the live mapping reached by following the
+  keys in `path`.
+- `sequence_at(node, *path)` returns the live list reached the same way.
+
+Both raise `WorkflowError` naming the path when a hop is missing or of the
+wrong kind. Ordinary `isinstance` narrowing is also acceptable; bind the value
+to a local first. Use `typing.cast` only directly after a runtime check that
+proves the type. `workflow_contract_support_test.py` covers the two helpers.
+
+`python_lint_gateway_test.py` fails if `typecheck` stops depending on
+`typecheck-python`, if `TY_VERSION` is not an exact pin, if the
+`typecheck-python` recipe loses ty, the pin, the baselines, or the shared
+source roots, or if CI stops running `make typecheck`.
 
 ## Spelling policy
 

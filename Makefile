@@ -1,7 +1,7 @@
 .PHONY: help all clean test build release coverage lint fmt check-fmt \
 	markdownlint nixie audit rust-audit spelling test-workflow-contracts \
 	typecheck install-build-tools check-build-tools lint-clippy lint-whitaker \
-	lint-python
+	lint-python typecheck-python typecheck-rust
 
 # Keep the composite gates sequential even when a caller uses `make -j`.
 .NOTPARALLEL: all lint
@@ -78,6 +78,20 @@ AMBRLEAKS = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
 INTERROGATE_VERSION ?= 1.7.0
 INTERROGATE = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
 	--from 'interrogate==$(INTERROGATE_VERSION)' interrogate --fail-under 100
+# Pin ty so `make` and CI invoke the same typechecker release. ty is pre-1.0
+# and its diagnostics shift between releases, so an unpinned install can fail
+# the gate without any code change. Bump deliberately and fix the new
+# diagnostics in the same commit.
+TY_VERSION ?= 0.0.74
+# ty resolves third-party imports from the environment `uv tool run` builds, so
+# the packages the Python sources import are installed beside it. pytest is
+# pinned to keep ty's view of its types stable; PyYAML is a floor, as in
+# `test-workflow-contracts`.
+TY_DEPENDENCIES = --with pytest==9.0.2 --with 'pyyaml>=6'
+# The contract tests import their sibling modules through the directory pytest
+# puts on `sys.path`, which ty does not follow, so those directories are named
+# as search roots. Only directories that exist are passed.
+PYTHON_IMPORT_ROOTS = $(addprefix --extra-search-path ,$(wildcard tests/workflow_contracts scripts .github/scripts))
 # Directories that may hold Python: tests, scripts, benchmarks, and the
 # modules that GitHub Actions workflows and local actions run. Only the roots
 # that contain Python today are linted, so a new script or benchmark directory
@@ -229,8 +243,25 @@ lint-clippy: check-build-tools ## Run rustdoc and Clippy with the development fl
 	$(BASE_GATE_RUSTFLAGS) RUSTDOCFLAGS="$(RUSTDOC_FLAGS)" $(CARGO) doc --no-deps
 	$(CLIPPY_GATE_RUSTFLAGS) $(CARGO) clippy $(CLIPPY_FLAGS)
 
-typecheck: check-build-tools ## Type-check without building
+# `make typecheck` is the one type gate CI needs. The build-tools preflight
+# comes first, so a missing pinned tool stops the gate before any type check
+# runs, exactly as it did when `typecheck` was Rust only.
+typecheck: check-build-tools typecheck-python typecheck-rust ## Type-check the Python and Rust sources without building
+
+typecheck-rust: check-build-tools ## Type-check the Rust sources without building
 	$(GATE_RUSTFLAGS) $(CARGO) check $(CARGO_FLAGS)
+
+# The Python half takes the same source roots as the lint gateway, so a Python
+# file cannot be linted but left untyped.
+typecheck-python: ## Typecheck the Python sources with ty
+	@if [ -z "$(PYTHON_SOURCES)" ]; then \
+		echo "typecheck-python: no Python sources under $(PYTHON_SOURCE_ROOTS)"; \
+	else \
+		$(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
+			--from ty==$(TY_VERSION) $(TY_DEPENDENCIES) \
+			ty check --python-version $(PYTHON_BASELINE) \
+			$(PYTHON_IMPORT_ROOTS) $(PYTHON_SOURCES); \
+	fi
 
 fmt: ## Format Rust and Markdown sources
 	$(CARGO) fmt --all
