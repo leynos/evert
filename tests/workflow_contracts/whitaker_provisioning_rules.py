@@ -316,5 +316,5 @@ def direct_setup_violations(documents: dict[str, Document]) -> list[str]:
         f"{name} contains direct Whitaker or cargo-dylint provisioning"
         for name, workflow in documents.items()
         for step in steps(name, workflow)
-        if isinstance(step.get("run"), str) and DIRECT_SETUP.search(step["run"])
+        if isinstance(run := step.get("run"), str) and DIRECT_SETUP.search(run)
     ]

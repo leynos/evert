@@ -261,8 +261,8 @@ def _step_wrapper_violations(
     candidates = [
         (index, step)
         for index, step in enumerate(steps)
-        if isinstance(step.get("run"), str)
-        and step["run"].strip() == "make install-build-tools"
+        if isinstance(run := step.get("run"), str)
+        and run.strip() == "make install-build-tools"
     ]
     valid_before = [
         index

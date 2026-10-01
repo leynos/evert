@@ -9,6 +9,7 @@ from workflow_contract_support import (
     continues_on_error,
     fresh_documents,
     jobs,
+    mapping_at,
 )
 
 WORKFLOW = "coverage-main.yml"
@@ -59,7 +60,7 @@ def _coverage_flag_violations(
         return [f"{WORKFLOW} is required for the main coverage compiler contract"]
 
     violations: list[str] = []
-    if _binds_encoded_flags(workflow):
+    if _binds_encoded_flags(mapping_at(documents, WORKFLOW)):
         violations.append(f"{WORKFLOW} workflow env must not bind {ENCODED_FLAGS}")
     job = jobs(WORKFLOW, workflow).get(JOB)
     if job is None:
@@ -129,7 +130,7 @@ def _check_content_violations(check: dict[str, object]) -> list[str]:
     return violations
 
 
-def _binds_encoded_flags(mapping: dict[object, object]) -> bool:
+def _binds_encoded_flags(mapping: dict[str, object]) -> bool:
     """Fail closed on malformed env maps and direct encoded-flag bindings."""
     environment = mapping.get("env")
     return environment is not None and (
@@ -218,7 +219,7 @@ def test_main_coverage_keeps_the_explicit_llvm_flags() -> None:
     documents = fresh_documents()
     steps = _coverage_steps(documents)
     coverage = next(step for step in steps if calls(step, COVERAGE_ACTION))
-    coverage["env"]["RUSTFLAGS"] = "-Zcodegen-backend=cranelift -Zthreads=8"
+    mapping_at(coverage, "env")["RUSTFLAGS"] = "-Zcodegen-backend=cranelift -Zthreads=8"
 
     violations = _coverage_flag_violations(documents)
     assert any("explicit LLVM RUSTFLAGS" in violation for violation in violations), (

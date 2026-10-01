@@ -71,6 +71,7 @@ def _matrix_values(job: dict[str, object], key: str) -> list[object] | None:
     if not isinstance(matrix, dict):
         return None
     values = matrix.get(key)
+    found: list[object]
     match values:
         case [_, *_]:
             found = list(values)

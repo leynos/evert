@@ -12,6 +12,8 @@ from workflow_contract_support import (
     fresh_documents,
     jobs,
     load_workflow,
+    mapping_at,
+    sequence_at,
 )
 
 
@@ -39,7 +41,7 @@ def test_duplicate_workflow_keys_are_rejected() -> None:
 def test_removing_setup_rust_breaks_coverage_provisioning() -> None:
     """Dropping setup-rust leaves the CI suite without a linker installer."""
     documents = fresh_documents()
-    steps = documents["ci.yml"]["jobs"]["build-test"]["steps"]
+    steps = sequence_at(documents, "ci.yml", "jobs", "build-test", "steps")
     setup_index = next(
         index
         for index, step in enumerate(steps)
@@ -122,7 +124,7 @@ def test_setup_rust_mutations_are_rejected(mutation: str, expected: str) -> None
         case "soft-fail":
             setup_step["continue-on-error"] = True
         case _:
-            setup_step["with"]["mold-version"] = "0.0.0"
+            mapping_at(setup_step, "with")["mold-version"] = "0.0.0"
 
     violations = build_tool_violations(documents)
     assert any(expected in violation for violation in violations), violations
@@ -131,7 +133,7 @@ def test_setup_rust_mutations_are_rejected(mutation: str, expected: str) -> None
 def test_new_linux_suite_without_an_installer_is_discovered() -> None:
     """A new suite job is measured without being listed anywhere."""
     documents = fresh_documents()
-    documents["ci.yml"]["jobs"]["future-linux-suite"] = {
+    mapping_at(documents, "ci.yml", "jobs")["future-linux-suite"] = {
         "runs-on": "ubuntu-latest",
         "steps": [{"run": "cargo test --workspace"}],
     }
@@ -146,7 +148,7 @@ def test_new_linux_suite_without_an_installer_is_discovered() -> None:
 def test_unknown_runner_for_a_suite_fails_closed() -> None:
     """A suite on an undeterminable runner is a violation."""
     documents = fresh_documents()
-    documents["ci.yml"]["jobs"]["future-unknown-suite"] = {
+    mapping_at(documents, "ci.yml", "jobs")["future-unknown-suite"] = {
         "runs-on": "${{ inputs.runner }}",
         "steps": [{"run": "cargo test --workspace"}],
     }
@@ -170,7 +172,7 @@ def test_new_local_reusable_suite_call_fails_closed() -> None:
             }
         }
     }
-    documents["ci.yml"]["jobs"]["future-reusable"] = {
+    mapping_at(documents, "ci.yml", "jobs")["future-reusable"] = {
         "uses": "./.github/workflows/future-reusable.yml"
     }
 
@@ -185,12 +187,10 @@ def test_new_local_reusable_suite_call_fails_closed() -> None:
 def test_mutation_reusable_suite_requires_build_tool_install() -> None:
     """The mutation workflow caller must install build tools."""
     documents = fresh_documents()
-    commands = documents["mutation-testing.yml"]["jobs"]["mutation"]["with"][
-        "setup-commands"
-    ]
-    documents["mutation-testing.yml"]["jobs"]["mutation"]["with"]["setup-commands"] = (
-        commands.replace("make install-build-tools\n", "")
-    )
+    inputs = mapping_at(documents, "mutation-testing.yml", "jobs", "mutation", "with")
+    commands = inputs["setup-commands"]
+    assert isinstance(commands, str), "setup-commands must be a string"
+    inputs["setup-commands"] = commands.replace("make install-build-tools\n", "")
 
     violations = build_tool_violations(documents)
     assert any(
@@ -203,9 +203,10 @@ def test_mutation_reusable_suite_requires_build_tool_install() -> None:
 def test_mutation_setup_cannot_hide_install_under_a_condition() -> None:
     """A conditional install does not satisfy the mutation contract."""
     documents = fresh_documents()
-    job = documents["mutation-testing.yml"]["jobs"]["mutation"]
-    commands = job["with"]["setup-commands"]
-    job["with"]["setup-commands"] = commands.replace(
+    inputs = mapping_at(documents, "mutation-testing.yml", "jobs", "mutation", "with")
+    commands = inputs["setup-commands"]
+    assert isinstance(commands, str), "setup-commands must be a string"
+    inputs["setup-commands"] = commands.replace(
         "make install-build-tools\n",
         'if test -n "$HOME"; then\nmake install-build-tools\nfi\n',
     )
@@ -218,7 +219,7 @@ def test_mutation_setup_cannot_hide_install_under_a_condition() -> None:
 
 def test_empty_suite_set_is_not_compliant() -> None:
     """A workflow set with no suite path is not compliant."""
-    documents = {
+    documents: dict[str, Document] = {
         "only-build.yml": {
             "jobs": {
                 "build": {

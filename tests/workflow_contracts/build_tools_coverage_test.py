@@ -106,7 +106,7 @@ def _coverage_flag_violations(documents: dict[str, Document]) -> list[str]:
     return violations
 
 
-def _binds_encoded_flags(mapping: dict[object, object]) -> bool:
+def _binds_encoded_flags(mapping: dict[str, object] | Document) -> bool:
     """Fail closed on malformed env maps and direct encoded-flag bindings."""
     environment = mapping.get("env")
     return environment is not None and (

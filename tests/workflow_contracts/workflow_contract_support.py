@@ -103,6 +103,76 @@ def jobs(name: str, document: Document) -> dict[str, dict[str, object]]:
     return typ.cast("dict[str, dict[str, object]]", found)
 
 
+def _follow(node: object, path: tuple[str, ...]) -> object:
+    """Walk nested mappings along a key path, failing on the first bad hop."""
+    current = node
+    for position, key in enumerate(path):
+        if not isinstance(current, dict) or key not in current:
+            message = f"`{'.'.join(path[: position + 1])}` is missing or not reachable"
+            raise WorkflowError(message)
+        current = current[key]
+    return current
+
+
+def mapping_at(node: object, *path: str) -> dict[str, object]:
+    """Return the live mapping reached by following ``path`` from ``node``.
+
+    Tests mutate the result to build a violating workflow, so it is the real
+    object, not a copy. The walk validates every hop, so a workflow whose shape
+    changed fails with a named path instead of a bare ``KeyError`` or a type
+    error far from the cause.
+
+    Parameters
+    ----------
+    node
+        The document, job, or step to start from.
+    *path
+        The keys to follow, outermost first. An empty path checks ``node``.
+
+    Returns
+    -------
+    dict[str, object]
+        The mapping found at the end of the path.
+
+    Raises
+    ------
+    WorkflowError
+        If a key is missing, or the value reached is not a mapping.
+    """
+    found = _follow(node, path)
+    if not isinstance(found, dict):
+        message = f"`{'.'.join(path)}` must be a mapping"
+        raise WorkflowError(message)
+    return typ.cast("dict[str, object]", found)
+
+
+def sequence_at(node: object, *path: str) -> list[object]:
+    """Return the live list reached by following ``path`` from ``node``.
+
+    Parameters
+    ----------
+    node
+        The document, job, or step to start from.
+    *path
+        The keys to follow, outermost first.
+
+    Returns
+    -------
+    list[object]
+        The list found at the end of the path.
+
+    Raises
+    ------
+    WorkflowError
+        If a key is missing, or the value reached is not a list.
+    """
+    found = _follow(node, path)
+    if not isinstance(found, list):
+        message = f"`{'.'.join(path)}` must be a list"
+        raise WorkflowError(message)
+    return typ.cast("list[object]", found)
+
+
 def steps(name: str, document: Document) -> cabc.Iterator[Step]:
     """Yield validated step mappings in workflow order."""
     for job in jobs(name, document).values():

@@ -21,6 +21,7 @@ from workflow_contract_support import (
     continues_on_error,
     fresh_documents,
     jobs,
+    mapping_at,
 )
 
 if typ.TYPE_CHECKING:
@@ -175,7 +176,7 @@ def test_new_linux_lint_job_without_action_is_rejected(
 ) -> None:
     """Reject a new Linux lint job that lacks the shared action."""
     documents = fresh_documents()
-    documents["ci.yml"]["jobs"][job_id] = {
+    mapping_at(documents, "ci.yml", "jobs")[job_id] = {
         "runs-on": "ubuntu-latest",
         "steps": [{"run": f"make {target}"}],
     }
@@ -189,7 +190,7 @@ def test_new_linux_lint_job_without_action_is_rejected(
 def test_new_linux_composite_lint_job_accepts_prior_action() -> None:
     """Accept a composite lint job that runs the action first."""
     documents = fresh_documents()
-    documents["ci.yml"]["jobs"]["future-composite-lint"] = {
+    mapping_at(documents, "ci.yml", "jobs")["future-composite-lint"] = {
         "runs-on": "ubuntu-latest",
         "steps": [
             {"uses": ACTION_USE, "with": {"cranelift": "false"}},
@@ -203,7 +204,7 @@ def test_new_linux_composite_lint_job_accepts_prior_action() -> None:
 def test_new_linux_lint_job_with_job_level_soft_fail_is_rejected() -> None:
     """Reject a new lint job that soft-fails at job level."""
     documents = fresh_documents()
-    documents["ci.yml"]["jobs"]["future-soft-failing-lint"] = {
+    mapping_at(documents, "ci.yml", "jobs")["future-soft-failing-lint"] = {
         "runs-on": "ubuntu-latest",
         "continue-on-error": True,
         "steps": [
@@ -221,7 +222,7 @@ def test_new_linux_lint_job_with_job_level_soft_fail_is_rejected() -> None:
 def test_indeterminate_runner_for_a_new_lint_job_fails_closed() -> None:
     """Reject a lint job whose runner cannot be resolved to Linux."""
     documents = fresh_documents()
-    documents["ci.yml"]["jobs"]["future-unknown-lint"] = {
+    mapping_at(documents, "ci.yml", "jobs")["future-unknown-lint"] = {
         "runs-on": "${{ inputs.runner }}",
         "steps": [{"run": "make lint"}],
     }
@@ -282,7 +283,8 @@ def _set_action_input(name: str, value: str) -> cabc.Callable[[_Scenario], None]
 
     def mutate(scenario: _Scenario) -> None:
         """Set the input on the action step."""
-        scenario.action.setdefault("with", {})[name] = value
+        scenario.action.setdefault("with", {})
+        mapping_at(scenario.action, "with")[name] = value
 
     return mutate
 

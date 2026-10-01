@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from workflow_contract_support import mapping_at
 
 WORKFLOW_PATH = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
 INSTALLER = re.compile(
@@ -157,7 +158,9 @@ def test_ci_markdown_contract_rejects_drift(mutation: str) -> None:
         "soft-installer": lambda: steps[installer_index].update({
             "continue-on-error": True
         }),
-        "narrow-globs": lambda: linter["with"].update({"globs": "docs/**/*.md"}),
+        "narrow-globs": lambda: mapping_at(linter, "with").update({
+            "globs": "docs/**/*.md"
+        }),
         "remove-formatter": lambda: steps.pop(formatter_index),
         "soft-formatter": lambda: steps[formatter_index].update({
             "continue-on-error": True

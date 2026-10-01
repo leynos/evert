@@ -184,6 +184,7 @@ def test_triggers_keep_schedule_and_plain_dispatch() -> None:
     )
     assert "workflow_dispatch" in triggers, "on.workflow_dispatch is missing"
     dispatch = triggers.get("workflow_dispatch") or {}
+    assert isinstance(dispatch, dict), "on.workflow_dispatch must be a mapping"
     inputs = dispatch.get("inputs") or {}
     assert "branch" not in inputs, (
         "on.workflow_dispatch must not declare a branch input; the Actions "
