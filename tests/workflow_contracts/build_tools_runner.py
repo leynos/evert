@@ -1,7 +1,5 @@
 """Classify GitHub Actions runners for build-tool workflow contracts."""
 
-from __future__ import annotations
-
 import re
 import typing as typ
 
@@ -17,6 +15,11 @@ def linux_runner_status(runs_on: object, job: dict[str, object]) -> bool | None:
     labels and unsupported expressions remain unknown so a suite job cannot
     become an accidental pass.
 
+    Returns
+    -------
+    bool | None
+        ``True`` for Linux, ``False`` for non-Linux, ``None`` when unknown.
+
     Examples
     --------
     >>> linux_runner_status("ubuntu-latest", {})
@@ -24,29 +27,41 @@ def linux_runner_status(runs_on: object, job: dict[str, object]) -> bool | None:
     >>> linux_runner_status({"group": "hosted"}, {}) is None
     True
     """
-    if isinstance(runs_on, str):
-        matrix_match = MATRIX_EXPRESSION.fullmatch(runs_on)
-        if matrix_match:
-            values = _matrix_values(job, matrix_match.group(1))
-            if values is None:
-                return None
-            statuses = [_runner_value_status(value) for value in values]
-            if any(status is None for status in statuses):
-                return None
-            return any(status for status in statuses)
-        return _runner_value_status_for_job(runs_on, job)
-
-    if isinstance(runs_on, list):
-        return _runner_label_set_status(runs_on, job)
-
-    if isinstance(runs_on, dict):
-        if set(runs_on) - {"group", "labels"} or "labels" not in runs_on:
+    match runs_on:
+        case str():
+            return _scalar_runner_status(runs_on, job)
+        case list():
+            return _runner_label_set_status(runs_on, job)
+        case dict():
+            return _mapping_runner_status(runs_on, job)
+        case _:
             return None
-        labels = runs_on["labels"]
-        if isinstance(labels, list):
-            return _runner_label_set_status(labels, job)
-        return _runner_value_status_for_job(labels, job)
-    return None
+
+
+def _scalar_runner_status(runs_on: str, job: dict[str, object]) -> bool | None:
+    """Classify a string runner, resolving a bare matrix expression by any-Linux."""
+    matrix_match = MATRIX_EXPRESSION.fullmatch(runs_on)
+    if matrix_match is None:
+        return _runner_value_status_for_job(runs_on, job)
+    values = _matrix_values(job, matrix_match.group(1))
+    if values is None:
+        return None
+    statuses = [_runner_value_status(value) for value in values]
+    if any(status is None for status in statuses):
+        return None
+    return any(statuses)
+
+
+def _mapping_runner_status(
+    runs_on: dict[str, object], job: dict[str, object]
+) -> bool | None:
+    """Classify a runner group mapping by its labels, if it has any."""
+    if set(runs_on) - {"group", "labels"} or "labels" not in runs_on:
+        return None
+    labels = runs_on["labels"]
+    if isinstance(labels, list):
+        return _runner_label_set_status(labels, job)
+    return _runner_value_status_for_job(labels, job)
 
 
 def _matrix_values(job: dict[str, object], key: str) -> list[object] | None:
@@ -56,12 +71,13 @@ def _matrix_values(job: dict[str, object], key: str) -> list[object] | None:
     if not isinstance(matrix, dict):
         return None
     values = matrix.get(key)
-    if isinstance(values, list) and values:
-        found = list(values)
-    elif isinstance(values, (str, int, float, bool)):
-        found = [values]
-    else:
-        found = []
+    match values:
+        case [_, *_]:
+            found = list(values)
+        case str() | int() | float() | bool():
+            found = [values]
+        case _:
+            found = []
     includes = matrix.get("include", [])
     if not isinstance(includes, list) or not all(
         isinstance(row, dict) for row in includes
@@ -108,12 +124,10 @@ def _runner_value_status(value: object) -> bool | None:
     if not isinstance(value, str):
         return None
     label = value.casefold()
-    if ("$" + "{{") in label or "}}" in label:
+    if "${{" in label or "}}" in label:
         return None
     if "ubuntu" in label or "linux" in label:
         return True
-    if any(
-        platform in label for platform in ("windows", "macos", "mac-os", "freebsd")
-    ):
+    if any(platform in label for platform in ("windows", "macos", "mac-os", "freebsd")):
         return False
     return None

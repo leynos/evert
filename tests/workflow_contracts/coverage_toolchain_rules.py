@@ -5,8 +5,6 @@ shared action revision fixes its installed component set; its caller inputs
 select the repository toolchain and pinned linker installation.
 """
 
-from __future__ import annotations
-
 import re
 import typing as typ
 
@@ -22,9 +20,13 @@ SETUP_ACTION: typ.Final[str] = "leynos/shared-actions/.github/actions/setup-rust
 FULL_SHA: typ.Final[re.Pattern[str]] = re.compile(r"@[0-9a-f]{40}$")
 
 
-def _setup(name: str, document: Document, coverage: Step) -> tuple[Step | None, list[str]]:
+def _setup(
+    name: str, document: Document, coverage: Step
+) -> tuple[Step | None, list[str]]:
     """Find the coverage job's sole unconditional setup before compilation."""
-    held = typ.cast("list[Step]", holding_job(name, document, coverage).get("steps", []))
+    held = typ.cast(
+        "list[Step]", holding_job(name, document, coverage).get("steps", [])
+    )
     found = [step for step in held if calls(step, SETUP_ACTION)]
     if len(found) != 1:
         return None, [f"{name} coverage needs one setup-rust step"]
@@ -32,7 +34,9 @@ def _setup(name: str, document: Document, coverage: Step) -> tuple[Step | None, 
     problems = []
     if held.index(setup) > held.index(coverage):
         problems.append(f"{name} setup-rust must precede coverage")
-    installers = [step for step in held if step.get("run") == "make install-build-tools"]
+    installers = [
+        step for step in held if step.get("run") == "make install-build-tools"
+    ]
     if len(installers) != 1:
         problems.append(f"{name} coverage needs one `make install-build-tools` step")
     elif held.index(setup) > held.index(installers[0]):
@@ -59,14 +63,25 @@ def toolchain_violations(
     component set and toolchain selection. The repository's toolchain file is
     checked out by both jobs; the caller must install the pinned linker before
     coverage.
+
+    Returns
+    -------
+    list[str]
+        One message per drift or setup problem; empty when the jobs agree.
     """
     main_setup, found = _setup(publisher, documents[publisher], trunk)
     for name, document, coverage in lanes:
         lane_setup, problems = _setup(name, document, coverage)
         found.extend(problems)
-        if main_setup is not None and lane_setup is not None and (
-            main_setup.get("uses") != lane_setup.get("uses")
-            or main_setup.get("with") != lane_setup.get("with")
-        ):
-            found.append(f"{name} setup-rust toolchain selection differs from {publisher}")
+        if _setups_differ(main_setup, lane_setup):
+            found.append(
+                f"{name} setup-rust toolchain selection differs from {publisher}"
+            )
     return found
+
+
+def _setups_differ(main_setup: Step | None, lane_setup: Step | None) -> bool:
+    """Tell whether two present setup steps pin different actions or inputs."""
+    if main_setup is None or lane_setup is None:
+        return False
+    return any(main_setup.get(key) != lane_setup.get(key) for key in ("uses", "with"))

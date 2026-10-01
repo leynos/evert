@@ -12,8 +12,6 @@ repin before a scheduled or manual run.
 Run via ``make test-workflow-contracts``.
 """
 
-from __future__ import annotations
-
 import re
 from pathlib import Path
 
@@ -21,16 +19,17 @@ import pytest
 import yaml
 
 WORKFLOW_PATH = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "mutation-testing.yml"
+    Path(__file__).resolve().parents[2]
+    / ".github"
+    / "workflows"
+    / "mutation-testing.yml"
 )
 
 #: The reusable-workflow revisions whose `install-mold` input and forwarding
 #: were checked in merged source. Shared-actions #545 added the input and
 #: forwards it to Setup Rust; Dependabot proposals need that source review
 #: before another SHA is added here.
-REVIEWED_SHARED_ACTION_PINS = frozenset(
-    {"9a27950942334d69ff79005b3a8db23bf151f43f"}
-)
+REVIEWED_SHARED_ACTION_PINS = frozenset({"9a27950942334d69ff79005b3a8db23bf151f43f"})
 
 #: Require a complete, lowercase commit SHA in the expected reusable-workflow
 #: path before checking it against the source-reviewed allowlist.
@@ -117,9 +116,7 @@ def test_uses_reference_is_pinned_to_a_commit_sha() -> None:
 def test_unreviewed_action_pin_mutation_is_rejected(pin: str) -> None:
     """Old and otherwise valid SHA pins fail until their source is reviewed."""
     job = _mutation_job(_load())
-    job["uses"] = (
-        "leynos/shared-actions/.github/workflows/mutation-cargo.yml@" + pin
-    )
+    job["uses"] = "leynos/shared-actions/.github/workflows/mutation-cargo.yml@" + pin
     with pytest.raises(AssertionError, match="has not been reviewed"):
         _assert_mutation_job_contract(job)
 
@@ -137,12 +134,12 @@ def test_linker_provisioning_input_mutation_is_rejected(
     """Removing or disabling the shared linker provisioning input fails."""
     job = _mutation_job(_load())
     with_block = job["with"]
-    assert isinstance(with_block, dict)
+    assert isinstance(with_block, dict), "the job `with` block must be a mapping"
     if mutation == "drop":
         del with_block["install-mold"]
     else:
         with_block["install-mold"] = value
-    with pytest.raises(AssertionError, match="jobs.mutation.with must be exactly"):
+    with pytest.raises(AssertionError, match=r"jobs\.mutation\.with must be exactly"):
         _assert_mutation_job_contract(job)
 
 

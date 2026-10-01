@@ -1,15 +1,13 @@
 """Exercise Cargo's discovered target configuration on the supported host."""
 
-from __future__ import annotations
-
 import os
 import platform
 import shlex
-import subprocess
 import tempfile
 from pathlib import Path
 
 import pytest
+from command_runner import run_fixed_command
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 TARGET_ROOT = REPOSITORY_ROOT / "target" / "cargo-selection-contract"
@@ -48,7 +46,7 @@ def _check_prerequisites() -> Path:
         "\t@printf '%s\\n' \"$$BUILD_TOOLS_PREFIX\"\n"
     )
     try:
-        result = subprocess.run(
+        result = run_fixed_command(
             [
                 "make",
                 "--no-print-directory",
@@ -58,9 +56,6 @@ def _check_prerequisites() -> Path:
                 prefix_target,
             ],
             cwd=REPOSITORY_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
         )
     except OSError as error:
         pytest.fail(
@@ -85,7 +80,8 @@ def _check_prerequisites() -> Path:
     if not wrapper.is_file() or not os.access(wrapper, os.X_OK):
         pytest.fail(
             _prerequisite_failure(
-                f"the Make-selected linker wrapper is missing or not executable: {wrapper}"
+                "the Make-selected linker wrapper is missing or not "
+                f"executable: {wrapper}"
             ),
             pytrace=False,
         )
@@ -116,8 +112,15 @@ def _cargo_environment(target_dir: Path, tools_bin: Path) -> dict[str, str]:
     return environment
 
 
-def _evert_rustc_command(output: str) -> tuple[list[str], str]:
-    """Extract the verbose rustc arguments for the root `evert` library."""
+def _evert_rustc_command(output: str) -> tuple[list[str], str] | None:
+    """Extract the verbose rustc arguments for the root `evert` library.
+
+    Returns
+    -------
+    tuple[list[str], str] | None
+        The rustc arguments and the rendered Cargo line, or ``None`` when the
+        output holds no rustc invocation for `evert`.
+    """
     for line in output.splitlines():
         marker = "Running `"
         if marker not in line or not line.rstrip().endswith("`"):
@@ -134,7 +137,7 @@ def _evert_rustc_command(output: str) -> tuple[list[str], str]:
             for index, argument in enumerate(arguments[:-1]):
                 if argument == "--crate-name" and arguments[index + 1] == "evert":
                     return arguments, line
-    raise AssertionError("verbose Cargo output has no rustc command for crate `evert`")
+    return None
 
 
 @pytest.mark.parametrize(
@@ -163,13 +166,10 @@ def test_native_cargo_check_selects_the_linux_development_flags(
     with tempfile.TemporaryDirectory(prefix=f"{case_id}-", dir=TARGET_ROOT) as scratch:
         command = ["cargo", "check", "--locked", "--lib", "-vv", *target_args]
         try:
-            result = subprocess.run(
+            result = run_fixed_command(
                 command,
                 cwd=REPOSITORY_ROOT,
-                env=_cargo_environment(Path(scratch), tools_bin),
-                check=False,
-                capture_output=True,
-                text=True,
+                environment=_cargo_environment(Path(scratch), tools_bin),
             )
         except OSError as error:
             pytest.fail(
@@ -181,10 +181,14 @@ def test_native_cargo_check_selects_the_linux_development_flags(
     assert result.returncode == 0, (
         f"`{' '.join(command)}` failed from the repository root:\n{output[-12000:]}"
     )
-    try:
-        rustc_arguments, rendered_command = _evert_rustc_command(output)
-    except AssertionError as error:
-        pytest.fail(f"{error}\nCargo output:\n{output[-12000:]}", pytrace=False)
+    evert_command = _evert_rustc_command(output)
+    if evert_command is None:
+        pytest.fail(
+            "verbose Cargo output has no rustc command for crate `evert`\n"
+            f"Cargo output:\n{output[-12000:]}",
+            pytrace=False,
+        )
+    rustc_arguments, rendered_command = evert_command
 
     missing_flags = REQUIRED_RUSTFLAGS.difference(rustc_arguments)
     assert not missing_flags, (
@@ -192,5 +196,9 @@ def test_native_cargo_check_selects_the_linux_development_flags(
         f"{sorted(missing_flags)}:\n{rendered_command}"
     )
     assert not any(
-        argument.startswith("-Zcodegen-backend=cranelift") for argument in rustc_arguments
-    ), f"Cargo {case_id} selected the unsupported Cranelift backend:\n{rendered_command}"
+        argument.startswith("-Zcodegen-backend=cranelift")
+        for argument in rustc_arguments
+    ), (
+        f"Cargo {case_id} selected the unsupported Cranelift backend:\n"
+        f"{rendered_command}"
+    )

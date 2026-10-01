@@ -1,9 +1,6 @@
 """Test the runner shapes recognized by build-tool workflow contracts."""
 
-from __future__ import annotations
-
 import pytest
-
 from build_tools_runner import linux_runner_status
 
 
@@ -35,7 +32,7 @@ from build_tools_runner import linux_runner_status
     ],
 )
 def test_runner_shapes_are_classified_or_left_unknown(
-    runner: object, job: dict[str, object], expected: bool | None
+    runner: object, job: dict[str, object], *, expected: bool | None
 ) -> None:
     """Recognized runners distinguish Linux, non-Linux, and uncertainty."""
-    assert linux_runner_status(runner, job) is expected
+    assert linux_runner_status(runner, job) is expected, runner
