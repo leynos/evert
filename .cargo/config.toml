@@ -1,28 +1,21 @@
 # Repository-wide Cargo defaults for the development build standard
 # (concordat rule `rust-build-defaults`).
 #
-# The parallel `rustc` frontend and, on Linux, the `mold` linker are the
-# defaults for every development, test, lint and typecheck build. Cargo
-# auto-discovers this file, so a bare `cargo build` gets them too.
+# On the selected x86_64 GNU/Linux development target, the LLVM backend, the
+# parallel `rustc` frontend and the pinned `mold` linker are the defaults. Cargo
+# auto-discovers this file, so a bare `cargo build` on that target gets the
+# frontend and linker settings while retaining rustc's supported LLVM backend.
 #
-# Cargo selects a single `rustflags` source rather than merging them: a
-# matching `[target.*]` table replaces `[build] rustflags` outright, and an
-# assigned `RUSTFLAGS` replaces both. Every flag is therefore repeated in each
-# source here, and the Makefile composes them into the `RUSTFLAGS` its
-# recipes set. Coverage and the release recipe and workflow assign `RUSTFLAGS`
-# without them on purpose. A direct `cargo build --release` keeps these flags
-# unless `RUSTFLAGS` is assigned.
-[build]
-rustflags = ["-Zthreads=8"]
-
-# mold ships for Linux only, so the linker flag lives in a Linux-only table,
-# with clang driving the link. Other targets, macOS and Windows included, fall
-# through to `[build] rustflags` above and keep their platform linker.
+# An assigned `RUSTFLAGS` replaces this target source. The Makefile restates
+# the flags in its `RUSTFLAGS` assignment for the same target, while other
+# targets keep their platform compiler and linker. The backend is left to
+# rustc's LLVM default; no experimental backend flag is configured here.
+# Coverage and release routes assign `RUSTFLAGS` without the development
+# flags. A direct `cargo build --release` keeps them unless overridden.
+# Clang can resolve /usr/bin/ld.mold ahead of PATH. The wrapper verifies the
+# pinned binary and supplies its directory with -B, so a system linker cannot
+# silently replace it. Both linker selection flags live in this exact target
+# rustflags source; other targets keep their platform linker, while a
+# release or coverage RUSTFLAGS assignment clears them together.
 [target.x86_64-unknown-linux-gnu]
-linker = "clang"
-
-# mold ships for Linux only, so the linker flag lives in a Linux-only table. A `cfg` table
-# matches every Linux target, not one architecture; the triple tables above keep only the
-# linker. Other targets, macOS and Windows included, fall through to `[build] rustflags`.
-[target.'cfg(target_os = "linux")']
-rustflags = ["-Zthreads=8", "-Clink-arg=-fuse-ld=mold"]
+rustflags = ["-Zthreads=8", "-Clinker=evert-clang-mold", "-Clink-arg=-fuse-ld=mold"]

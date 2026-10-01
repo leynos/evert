@@ -14,36 +14,70 @@ compact and omits build output such as `target/`.
 ├── .cargo/
 │   └── config.toml
 ├── .github/
+│   ├── cv005.toml
 │   ├── dependabot.yml
 │   └── workflows/
 │       ├── act-validation.yml
 │       ├── audit.yml
 │       ├── ci.yml
 │       ├── coverage-main.yml
-
+│       ├── dependabot-automerge.yml
+│       ├── mutation-testing.yml
 │       └── release.yml
-
 ├── docs/
 │   ├── contents.md
+│   ├── debugging/
+│   │   └── debugging-plan-2026-09-29-cranelift-unwind-test-abort.md
 │   ├── developers-guide.md
 │   ├── repository-layout.md
 │   ├── users-guide.md
 │   └── ...
+├── scripts/
+│   ├── build-tools-common.sh
+│   ├── check-build-tools.sh
+│   ├── clang-linker.sh
+│   └── install-build-tools.sh
 ├── src/
-
 │   ├── lib.rs
 │   └── main.rs
-
 ├── tests/
 │   ├── build_backend_contract.rs
+│   ├── build_backend_contract_support/
+│   │   ├── quoted_hash.rs
+│   │   └── toml.rs
 │   ├── build_standard_contract.rs
 │   ├── build_standard_support/
+│   │   ├── ci_steps.rs
+│   │   ├── config.rs
+│   │   ├── coverage_contract.rs
+│   │   └── make.rs
+│   ├── makefile_contract.rs
+│   ├── makefile_contract_support/
+│   │   ├── clippy_target_route.rs
+│   │   ├── cross_caller_flags.rs
+│   │   └── whitaker_binding.rs
 │   ├── stable_cargo_config.rs
-│   ├── stub.rs
 │   └── workflow_contracts/
+│       ├── build_tools_cache_test.py
+│       ├── build_tools_coverage_test.py
+│       ├── build_tools_rules.py
+│       ├── build_tools_runner.py
+│       ├── build_tools_runner_test.py
+│       ├── build_tools_test.py
+│       ├── cargo_selection_test.py
+│       ├── codescene_build_tools_test.py
+│       ├── codescene_coverage_route_test.py
+│       ├── codescene_toolchain_rules.py
+│       ├── codescene_toolchain_test.py
+│       ├── markdown_formatting_test.py
+│       ├── mutation_testing_test.py
+│       ├── supported_route_inventory_test.py
+│       ├── whitaker_provisioning_rules.py
+│       └── whitaker_provisioning_test.py
 ├── tools/
-│   └── dev-fast/
-│       └── config.toml
+│   └── mold/
+│       ├── SHA256SUMS
+│       └── VERSION
 ├── AGENTS.md
 ├── Cargo.toml
 ├── LICENSE
@@ -56,23 +90,30 @@ compact and omits build output such as `target/`.
 
 ## Path responsibilities
 
-- `.cargo/config.toml`: Configures Cargo defaults for local development,
-  including Linux linker settings.
+- `.cargo/config.toml`: Configures Cargo's discovered development defaults for
+  `x86_64-unknown-linux-gnu`: the parallel `rustc` frontend and pinned `mold`
+  linker. Rustc uses its LLVM backend on all targets.
 - `.github/dependabot.yml`: Configures automated dependency update checks.
+- `.github/cv005.toml`: Supplies repository-specific parameters to the shared
+  CV-005 workflow contracts.
 - `.github/workflows/act-validation.yml`: Runs the generated workflow
   validation through `act` separately from main CI.
-- `.github/workflows/audit.yml`: Audits dependencies on a weekly schedule.
+- `.github/workflows/audit.yml`: Runs the scheduled Rust dependency audit.
 - `.github/workflows/ci.yml`: Runs the generated project's continuous
   integration checks.
 - `.github/workflows/coverage-main.yml`: Measures coverage on each push to
   `main`, writes the coverage ratchet baseline, and is the only workflow that
   uploads coverage to CodeScene.
-
+- `.github/workflows/dependabot-automerge.yml`: Handles Dependabot pull
+  request auto-merge through the shared workflow.
+- `.github/workflows/mutation-testing.yml`: Runs scheduled and manually
+  dispatched mutation tests through the shared workflow.
 - `.github/workflows/release.yml`: Builds and publishes binary release
   artefacts for the application flavour.
 
 - `docs/`: Holds long-lived reference documentation, guides, style rules, and
   design material.
+- `docs/debugging/`: Holds investigation plans and their supporting evidence.
 - `docs/contents.md`: Indexes the documentation set and should be updated when
   documentation files are added, renamed, or removed.
 - `docs/users-guide.md`: Explains how to use the generated project and its
@@ -89,23 +130,40 @@ compact and omits build output such as `target/`.
 
 - `tests/`: Holds integration and behavioural tests that exercise public
   behaviour.
-- `tests/stub.rs`: Keeps the generated test directory valid until real tests
-  replace it.
-- `tests/build_backend_contract.rs`: Fails when a codegen-backend key sits in
-  `.cargo/config.toml` while the release builds on stable.
-- `tests/build_standard_contract.rs` and `tests/build_standard_support/`: Hold
-  the build standard's flags in the Cargo configuration, the Makefile recipes
-  and the setup-rust steps.
-- `tests/stable_cargo_config.rs`: Asks stable Cargo itself to read
-  `.cargo/config.toml`.
-- `tests/workflow_contracts/`: Holds the pytest contract for the
-  mutation-testing caller workflow, run by `make test-workflow-contracts`,
-  which also runs the shared CV-005 contract library.
-- `tools/dev-fast/config.toml`: Cargo configuration fragment that selects the
-  Cranelift codegen backend for the standard make targets and `make dev-build`/
-  `make dev-test`. Passed explicitly with `--config` rather than placed under
-  `.cargo/`, because the release builds on stable, which refuses a backend key
-  there; it never affects release, coverage, or verification builds.
+- `tests/build_backend_contract.rs`: Checks the development backend contract.
+- `tests/build_standard_contract.rs`: Checks target-specific development
+  defaults, Make routing, and build-tool prerequisites.
+- `tests/build_backend_contract_support/`: Holds TOML readers and quoted-hash
+  cases used by the development-backend contract.
+- `tests/build_standard_support/`: Holds helpers shared by build-standard
+  contract tests.
+- `tests/makefile_contract.rs`: Checks the Makefile's public target behaviour.
+- `tests/makefile_contract_support/`: Holds helpers for Clippy target routing,
+  caller-supplied flags, and binding Whitaker gate contracts.
+- `tests/stable_cargo_config.rs`: Checks that stable Cargo handles the
+  configured release route.
+- `tests/workflow_contracts/`: Holds pytest contracts for build-tool
+  provisioning, Cargo selection, CodeScene build and coverage routes, toolchain
+  routing, Markdown formatting, mutation testing, supported-route inventory,
+  and Whitaker provisioning. `make test-workflow-contracts` also runs the
+  shared CV-005 contracts with `.github/cv005.toml`.
+- `scripts/`: Installs and checks the pinned development compiler and linker
+  prerequisites used by the Makefile.
+- `scripts/build-tools-common.sh`: Shares build-tool paths and checks between
+  the installer and preflight scripts.
+- `scripts/check-build-tools.sh`: Checks the pinned nightly and `mold`
+  prerequisites before standard development Make targets compile.
+- `scripts/clang-linker.sh`: Source for the installed `evert-clang-mold` linker
+  wrapper. The installer places it in `$BUILD_TOOLS_PREFIX/bin` as
+  `evert-clang-mold`; it verifies the pinned `mold` binary and passes its
+  directory to Clang. Bare Cargo commands on the selected target require that
+  install directory on `PATH`.
+- `scripts/install-build-tools.sh`: Installs the pinned nightly and the
+  checksum-verified `mold` binary for local development.
+- `tools/mold/VERSION`: Records the `mold` release used by local build-tool
+  provisioning.
+- `tools/mold/SHA256SUMS`: Records the checksums for the supported `mold`
+  archives used by local build-tool provisioning.
 - `AGENTS.md`: Provides repository-specific working instructions for agents and
   contributors.
 - `Cargo.toml`: Defines package metadata, dependencies, lint policy, and Cargo

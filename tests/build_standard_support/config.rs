@@ -7,9 +7,12 @@ pub const CONFIG: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/.car
 pub const TOOLCHAIN: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/rust-toolchain.toml"));
 
-/// The parallel-frontend flag every `rustflags` source carries on a nightly
-/// pin.
+/// An unsupported backend flag that the standard must not select.
+pub const BACKEND_FLAG: &str = "-Zcodegen-backend=cranelift";
+/// The parallel-frontend flag carried by the selected target's rustflags source.
 pub const THREADS_FLAG: &str = "-Zthreads=8";
+/// The Linux linker wrapper that verifies and selects the pinned `mold` binary.
+pub const LINKER_DRIVER_FLAG: &str = "-Clinker=evert-clang-mold";
 /// The linker flag the Linux source adds, normalized to one token.
 pub const LINKER_FLAG: &str = "-Clink-arg=-fuse-ld=mold";
 
@@ -27,14 +30,12 @@ impl Pin {
     /// Reads the pin from a `rust-toolchain.toml`.
     ///
     /// The channel must be named exactly once and be one the standard knows: a
-    /// `nightly` (dated or not), `stable`, `beta`, or a numbered release.
-    /// Anything else, and a missing or repeated `channel`, is an error rather
-    /// than a guess that lets a malformed file pass as stable.
+    /// `nightly`, a `nightly-YYYY-MM-DD`, `stable`, `beta`, or a numbered release.
+    /// Missing, repeated and unknown channels are errors, not stable pins.
     ///
     /// ```text
     /// Pin::read("channel = \"nightly-2026-05-28\"") == Ok(Pin::Nightly)
-    /// Pin::read("channel = \"1.94.0\"")             == Ok(Pin::Stable)
-    /// Pin::read("[toolchain]")                       == Err(..)
+    /// Pin::read("channel = \"1.94.0\"") == Ok(Pin::Stable)
     /// ```
     ///
     /// # Errors
@@ -58,7 +59,21 @@ impl Pin {
 
     /// Classifies one channel name.
     fn classify(channel: &str) -> Result<Self, String> {
-        let is_nightly = channel == "nightly" || channel.starts_with("nightly-");
+        let is_date_component = |part: &str, width: usize| {
+            part.len() == width && part.bytes().all(|byte| byte.is_ascii_digit())
+        };
+        let is_dated_nightly = channel.strip_prefix("nightly-").is_some_and(|date| {
+            let mut parts = date.split('-');
+            matches!(
+                (parts.next(), parts.next(), parts.next(), parts.next()),
+                (Some(year), Some(month), Some(day), None)
+                    if is_date_component(year, 4)
+                        && [month, day]
+                            .into_iter()
+                            .all(|part| is_date_component(part, 2))
+            )
+        });
+        let is_nightly = channel == "nightly" || is_dated_nightly;
         let is_release = channel.split('.').count() >= 2
             && channel
                 .split('.')
@@ -106,31 +121,38 @@ impl Flags {
     /// Returns whether the list names the frontend flag.
     pub fn names_threads(&self) -> bool { self.names(THREADS_FLAG) }
 
+    /// Returns whether the list names the unsupported Cranelift backend.
+    pub fn names_backend(&self) -> bool { self.names(BACKEND_FLAG) }
+
     /// Returns whether the list names the linker flag.
     pub fn names_linker(&self) -> bool { self.names(LINKER_FLAG) }
 
-    /// Returns the list without the linker flag, which is the one that may
-    /// differ.
-    fn without_linker_flag(&self) -> Vec<&String> {
-        self.0.iter().filter(|flag| *flag != LINKER_FLAG).collect()
-    }
+    /// Returns whether the list names the pinned linker wrapper.
+    pub fn names_linker_driver(&self) -> bool { self.names(LINKER_DRIVER_FLAG) }
 
-    /// Checks the list against a pin and whether the linker flag is expected.
+    /// Checks that Cranelift is absent and supported development flags are
+    /// present or absent as the route requires.
     ///
     /// ```text
-    /// Flags::from_words(["-Zthreads=8"]).meets(Pin::Nightly, false) == Ok(())
-    /// Flags::from_words([]).meets(Pin::Nightly, false).is_err()
+    /// Flags::from_words([]).meets(false) == Ok(())
+    /// Flags::from_words([]).meets(true).is_err()
     /// ```
     ///
     /// # Errors
     ///
-    /// Returns the reason when the frontend or linker flag is wrong.
-    pub fn meets(&self, pin: Pin, takes_linker_flag: bool) -> Result<(), String> {
-        if self.names_threads() != pin.takes_threads() {
+    /// Returns the reason when the backend, frontend, or linker settings are wrong.
+    pub fn meets(&self, takes_development_flags: bool) -> Result<(), String> {
+        if self.names_backend() {
+            return Err(format!("selects unsupported {BACKEND_FLAG}: {:?}", self.0));
+        }
+        if self.names_threads() != takes_development_flags {
             return Err(format!("gets {THREADS_FLAG} wrong: {:?}", self.0));
         }
-        if self.names_linker() != takes_linker_flag {
-            return Err(format!("gets mold wrong: {:?}", self.0));
+        if self.names_linker() != takes_development_flags {
+            return Err(format!("gets the pinned linker wrong: {:?}", self.0));
+        }
+        if self.names_linker_driver() != takes_development_flags {
+            return Err(format!("gets pinned linker wrapper wrong: {:?}", self.0));
         }
         Ok(())
     }
@@ -143,13 +165,16 @@ struct Source {
 }
 
 impl Source {
-    /// Returns whether the table applies on Linux alone.
-    fn is_linux(&self) -> bool { self.table.starts_with("target.") && self.table.contains("linux") }
+    /// Returns whether this is the target whose development route was selected.
+    fn is_development_target(&self) -> bool { self.table == "target.x86_64-unknown-linux-gnu" }
 
-    /// Returns what is wrong with the source's flags for a pin: the frontend
-    /// flag on a nightly pin only, and mold in a Linux table only.
+    /// Returns a flag mismatch: supported development settings belong on the
+    /// selected target alone when its toolchain is nightly.
     fn problem(&self, pin: Pin) -> Option<String> {
-        let reason = self.flags.meets(pin, self.is_linux()).err()?;
+        let reason = self
+            .flags
+            .meets(pin.takes_threads() && self.is_development_target())
+            .err()?;
         Some(format!("[{}] {reason}", self.table))
     }
 }
@@ -231,36 +256,29 @@ fn sources(config: &str) -> Result<Vec<Source>, String> {
     Ok(found)
 }
 
-/// Returns the complaints about which sources exist: there must be a Linux
-/// table, and a nightly pin needs a `[build]` source for the other hosts.
+/// Returns complaints about source scope: the supported target alone may
+/// inherit nightly development flags from Cargo defaults.
 fn shape_problems(found: &[Source], pin: Pin) -> Problems {
     let checks = [
-        (found.is_empty(), "no rustflags source"),
         (
-            !found.iter().any(Source::is_linux),
-            "no Linux target table carries rustflags",
+            pin.takes_threads() && found.is_empty(),
+            "no rustflags source",
         ),
         (
-            pin.takes_threads() && !found.iter().any(|source| source.table == "build"),
-            "no [build] rustflags for non-Linux hosts",
+            pin.takes_threads() && !found.iter().any(Source::is_development_target),
+            "no x86_64 GNU/Linux target table carries rustflags",
         ),
+        (
+            found.iter().any(|source| !source.is_development_target()),
+            "another target or [build] carries rustflags",
+        ),
+        (found.len() > 1, "more than one rustflags source"),
     ];
     checks
         .into_iter()
         .filter(|(failed, _)| *failed)
         .map(|(_, text)| text.to_owned())
         .collect()
-}
-
-/// Returns a complaint when the sources differ in anything but the linker,
-/// since Cargo applies one source rather than merging them.
-fn drift_problem(found: &[Source]) -> Option<String> {
-    let mut stripped: Vec<Vec<&String>> = found
-        .iter()
-        .map(|source| source.flags.without_linker_flag())
-        .collect();
-    stripped.dedup();
-    (stripped.len() > 1).then(|| format!("sources differ beyond the linker: {stripped:?}"))
 }
 
 /// Returns every complaint about the configuration sources.
@@ -276,6 +294,5 @@ pub fn config_problems(config: &str, pin: Pin) -> Result<Problems, String> {
     let found = sources(config)?;
     let mut problems = shape_problems(&found, pin);
     problems.extend(found.iter().filter_map(|source| source.problem(pin)));
-    problems.extend(drift_problem(&found));
     Ok(problems)
 }

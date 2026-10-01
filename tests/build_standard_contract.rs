@@ -1,22 +1,43 @@
 //! Contract tests for the Rust build standard.
 //!
-//! The standard makes the parallel `rustc` frontend and, on Linux, mold the
-//! default for every development build. Cargo applies one `rustflags` source
-//! rather than merging them, and an assigned `RUSTFLAGS` replaces every source,
-//! so the flags are repeated in each configuration source, restated by each
-//! development recipe, and kept out of the coverage and release recipes. The
-//! Makefile clauses read what `make -n` prints on a Linux and a macOS host; each
-//! listed `setup-rust` step passes `install-mold`. Fixtures come first, so no
-//! rule passes by detecting nothing.
+//! The standard keeps rustc's LLVM backend and makes the parallel rustc
+//! frontend and pinned `mold` wrapper the defaults for `x86_64` GNU/Linux
+//! development builds. Cargo reads the latter settings from .cargo/config.toml,
+//! but an assigned RUSTFLAGS replaces that target source. Make therefore
+//! restates them for the same host, while other hosts and coverage or release
+//! routes keep their own toolchains.
+//!
+//!
+//! The Makefile clauses run `make -n` and read the commands it would run,
+//! rather than the Makefile's text, so a flag lost through a variable or a
+//! recipe edit fails here. They check `x86_64` GNU/Linux, Linux/aarch64, and
+//! `macOS/x86_64` because the default is scoped to one exact target triple. The
+//! listed targets and workflows are this repository's own: one that stops
+//! being defined fails the contract, so the check cannot quietly stop covering
+//! it. Each CI workflow that sets up Rust passes `install-mold: 'true'`, so
+//! the Linux jobs have the linker. The readers are driven against fixtures
+//! first, because a rule exercised only over this repository's own compliant
+//! files would pass whether or not it detects anything.
 
 #[path = "build_standard_support/ci_steps.rs"]
 mod ci_steps;
 #[path = "build_standard_support/config.rs"]
 mod config;
+#[path = "build_standard_support/coverage_contract.rs"]
+mod coverage_contract;
 #[path = "build_standard_support/make.rs"]
 mod make;
-use ci_steps::{Workflow, coverage_problems, linker_install_problems, workflow_problems};
-use config::{CONFIG, Flags, Pin, Problems, THREADS_FLAG, TOOLCHAIN, config_problems};
+use ci_steps::{linker_install_problems, workflow_problems};
+use config::{
+    BACKEND_FLAG,
+    CONFIG,
+    Flags,
+    Pin,
+    Problems,
+    THREADS_FLAG,
+    TOOLCHAIN,
+    config_problems,
+};
 use make::{
     Assignment,
     Host,
@@ -39,72 +60,78 @@ fn none_of(problems: &Problems) -> Result<(), String> {
 
 /// A toolchain file pinning a nightly channel.
 const NIGHTLY: &str = "[toolchain]\nchannel = \"nightly-2026-05-28\"\n";
+/// A toolchain file pinning the unqualified nightly channel.
+const UNDATED_NIGHTLY: &str = "[toolchain]\nchannel = \"nightly\"\n";
 /// A toolchain file pinning a stable channel.
 const STABLE: &str = "[toolchain]\nchannel = \"1.94.0\"\n";
+/// A toolchain file pinning the stable channel by name.
+const STABLE_CHANNEL: &str = "[toolchain]\nchannel = \"stable\"\n";
+/// A toolchain file pinning the beta channel.
+const BETA: &str = "[toolchain]\nchannel = \"beta\"\n";
+/// A toolchain file that names no channel.
+const NO_CHANNEL: &str = "[toolchain]\ncomponents = [\"clippy\"]\n";
+/// A toolchain file that names two channels.
+const TWO_CHANNELS: &str = "[toolchain]\nchannel = \"stable\"\nchannel = \"nightly\"\n";
+/// A toolchain file naming a channel the standard does not know.
+const UNKNOWN_CHANNEL: &str = "[toolchain]\nchannel = \"weekly\"\n";
+/// A toolchain file with an unrecognized nightly suffix.
+const NIGHTLY_FOO: &str = "[toolchain]\nchannel = \"nightly-foo\"\n";
+/// A toolchain file whose nightly date has a short month field.
+const MALFORMED_NIGHTLY_DATE: &str = "[toolchain]\nchannel = \"nightly-2026-5-28\"\n";
 
-/// A compliant nightly configuration: the frontend flag in every source and
-/// mold in the Linux table alone.
+/// A compliant nightly configuration: supported development flags on the exact
+/// `x86_64` GNU/Linux target and nowhere else.
 const NIGHTLY_OK: &str = concat!(
-    "[build]\nrustflags = [\"-Zthreads=8\"]\n",
-    "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n",
-    "rustflags = [\"-Zthreads=8\", \"-Clink-arg=-fuse-ld=mold\"]\n"
+    "[target.x86_64-unknown-linux-gnu]\n",
+    "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
-/// The same, with the linker flag spelled as the `-C` pair Cargo also accepts.
+/// The same target, with the linker flag spelled as the `-C` pair Cargo accepts.
 const NIGHTLY_SPELLED_APART: &str = concat!(
-    "[build]\nrustflags = [\"-Zthreads=8\"]\n",
-    "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n",
-    "rustflags = [\"-Zthreads=8\", \"-C\", \"link-arg=-fuse-ld=mold\"]\n"
+    "[target.x86_64-unknown-linux-gnu]\n",
+    "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\", \"-C\", \
+     \"link-arg=-fuse-ld=mold\"]\n"
 );
-/// A compliant stable configuration: mold alone, in the Linux table.
-const STABLE_OK: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n",
-    "rustflags = [\"-Clink-arg=-fuse-ld=mold\"]\n"
+/// A compliant stable configuration with no development flags.
+const STABLE_OK: &str = concat!("[target.x86_64-unknown-linux-gnu]\n", "rustflags = []\n");
+/// The exact target selects the unsupported Cranelift backend.
+const TARGET_SELECTS_CRANELIFT: &str = concat!(
+    "[target.x86_64-unknown-linux-gnu]\n",
+    "rustflags = [\"-Zcodegen-backend=cranelift\", \"-Zthreads=8\", ",
+    "\"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
-/// A nightly configuration whose `[build]` source lost the frontend flag, so it
-/// is missing it and also differs from the Linux source.
-const BUILD_LOSES_THREADS: &str = concat!(
-    "[build]\nrustflags = [\"-Dwarnings\"]\n",
-    "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n",
+/// The exact target lost the parallel frontend flag.
+const TARGET_LOSES_THREADS: &str = concat!(
+    "[target.x86_64-unknown-linux-gnu]\n",
+    "rustflags = [\"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
+);
+/// The exact target lost the `mold` linker argument.
+const TARGET_LOSES_LINKER: &str = concat!(
+    "[target.x86_64-unknown-linux-gnu]\n",
+    "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\"]\n"
+);
+/// The exact target lost the pinned linker wrapper.
+const TARGET_LOSES_DRIVER: &str = concat!(
+    "[target.x86_64-unknown-linux-gnu]\n",
     "rustflags = [\"-Zthreads=8\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
-/// A nightly configuration whose Linux table lost mold.
-const LINUX_LOSES_LINKER: &str = concat!(
-    "[build]\nrustflags = [\"-Zthreads=8\"]\n",
-    "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n",
-    "rustflags = [\"-Zthreads=8\"]\n"
+/// Development flags in `[build]` would leak to every target.
+const BUILD_LEAKS_DEVELOPMENT_FLAGS: &str = concat!(
+    "[build]\n",
+    "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
-/// A nightly configuration that names mold in `[build]`, beyond Linux.
-const LINKER_IN_BUILD: &str = concat!(
-    "[build]\nrustflags = [\"-Zthreads=8\", \"-Clink-arg=-fuse-ld=mold\"]\n",
-    "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n",
-    "rustflags = [\"-Zthreads=8\", \"-Clink-arg=-fuse-ld=mold\"]\n"
-);
-/// A nightly configuration with no `[build]` source for the other hosts.
-const NO_BUILD_SOURCE: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n",
-    "rustflags = [\"-Zthreads=8\", \"-Clink-arg=-fuse-ld=mold\"]\n"
+/// A broad Linux condition would also select Linux architectures without proof.
+const BROAD_LINUX_LEAKS_DEVELOPMENT_FLAGS: &str = concat!(
+    "[target.'cfg(target_os = \"linux\")']\n",
+    "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
 /// A stable configuration that names the nightly-only frontend flag.
 const STABLE_WITH_THREADS: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n",
-    "rustflags = [\"-Zthreads=8\", \"-Clink-arg=-fuse-ld=mold\"]\n"
-);
-/// A compliant configuration whose table headers and entries carry comments,
-/// with a hash inside a quoted value.
-const COMMENTED_OK: &str = concat!(
-    "[build] # every host\nrustflags = [\"-Zthreads=8\"] # the frontend\n",
-    "[target.x86_64-unknown-linux-gnu] # Linux\nlinker = \"clang\"\n",
-    "rustflags = [\"-Zthreads=8\", \"-Clink-arg=-fuse-ld=mold\"]\n",
-    "note = \"a # inside a string\"\n"
-);
-/// A compliant configuration with a sibling key that only starts like `rustflags`.
-const SIBLING_KEY_OK: &str = concat!(
-    "[build]\nrustflags = [\"-Zthreads=8\"]\nrustflags-extra = [\"-Dwarnings\"]\n",
-    "[target.x86_64-unknown-linux-gnu]\nlinker = \"clang\"\n",
-    "rustflags = [\"-Zthreads=8\", \"-Clink-arg=-fuse-ld=mold\"]\n"
+    "[target.x86_64-unknown-linux-gnu]\n",
+    "rustflags = [\"-Zthreads=8\"]\n"
 );
 /// A `rustflags` array spread over several lines, which the reader refuses.
-const SPREAD_ARRAY: &str = "[build]\nrustflags = [\n  \"-Zthreads=8\",\n]\n";
+const SPREAD_ARRAY: &str =
+    "[target.x86_64-unknown-linux-gnu]\nrustflags = [\n  \"-Zthreads=8\",\n]\n";
 
 /// Checks that a fixture configuration draws the expected number of complaints.
 fn draws(config: &str, pin: Pin, expected: usize) -> Result<(), String> {
@@ -118,21 +145,25 @@ fn draws(config: &str, pin: Pin, expected: usize) -> Result<(), String> {
 
 /// Scenario: configurations of each shape, read on a nightly and a stable pin.
 ///
-/// Invariant: a compliant nightly file passes, and each way of losing the
-/// frontend flag, losing mold, naming mold beyond Linux, or letting a source
-/// drift is reported; a stable pin refuses the frontend flag it cannot take.
+/// Invariant: only the exact target triple carries supported development flags;
+/// each missing flag and broad-source leak is reported, and stable refuses
+/// nightly-only flags.
 #[rstest]
 #[case::compliant_nightly(NIGHTLY_OK, Pin::Nightly, 0)]
 #[case::linker_spelled_as_a_pair(NIGHTLY_SPELLED_APART, Pin::Nightly, 0)]
 #[case::compliant_stable(STABLE_OK, Pin::Stable, 0)]
-#[case::build_loses_the_frontend(BUILD_LOSES_THREADS, Pin::Nightly, 2)]
-#[case::linux_loses_the_linker(LINUX_LOSES_LINKER, Pin::Nightly, 1)]
-#[case::linker_named_in_build(LINKER_IN_BUILD, Pin::Nightly, 1)]
-#[case::no_build_source(NO_BUILD_SOURCE, Pin::Nightly, 1)]
+#[case::target_selects_unsupported_cranelift(TARGET_SELECTS_CRANELIFT, Pin::Nightly, 1)]
+#[case::target_loses_the_frontend(TARGET_LOSES_THREADS, Pin::Nightly, 1)]
+#[case::target_loses_the_linker(TARGET_LOSES_LINKER, Pin::Nightly, 1)]
+#[case::target_loses_the_pinned_driver(TARGET_LOSES_DRIVER, Pin::Nightly, 1)]
+#[case::build_table_leaks_to_all_targets(BUILD_LEAKS_DEVELOPMENT_FLAGS, Pin::Nightly, 3)]
+#[case::broad_linux_table_leaks_to_other_architectures(
+    BROAD_LINUX_LEAKS_DEVELOPMENT_FLAGS,
+    Pin::Nightly,
+    3
+)]
 #[case::stable_names_the_frontend(STABLE_WITH_THREADS, Pin::Stable, 1)]
-#[case::empty_configuration("", Pin::Nightly, 3)]
-#[case::comments_after_headers_and_entries(COMMENTED_OK, Pin::Nightly, 0)]
-#[case::a_key_that_only_starts_like_rustflags(SIBLING_KEY_OK, Pin::Nightly, 0)]
+#[case::empty_configuration("", Pin::Nightly, 2)]
 fn the_configuration_reader_reports_each_defect(
     #[case] config: &str,
     #[case] pin: Pin,
@@ -153,25 +184,23 @@ fn a_rustflags_array_spread_over_lines_is_refused() -> Result<(), String> {
     }
 }
 
-/// A toolchain file that names no channel.
-const NO_CHANNEL: &str = "[toolchain]\ncomponents = [\"clippy\"]\n";
-/// A toolchain file that names two channels.
-const TWO_CHANNELS: &str = "[toolchain]\nchannel = \"stable\"\nchannel = \"nightly\"\n";
-/// A toolchain file naming a channel the standard does not know.
-const UNKNOWN_CHANNEL: &str = "[toolchain]\nchannel = \"weekly\"\n";
-
-/// Scenario: toolchain files pinning each kind of channel, and files that do
-/// not.
+/// Scenario: toolchain files pinning recognized and malformed channels.
 ///
-/// Invariant: only a `nightly` channel reads as nightly, so only it is asked to
-/// carry `-Zthreads`; a missing, repeated or unknown channel is an error, not a
-/// stable pin by default.
+/// Invariant: bare and dated nightly channels read as nightly; stable, beta,
+/// and numbered channels read as stable. Missing, repeated, unknown, and
+/// malformed nightly channels are errors rather than silently being treated
+/// as stable.
 #[rstest]
 #[case::nightly(NIGHTLY, Some(Pin::Nightly))]
+#[case::undated_nightly(UNDATED_NIGHTLY, Some(Pin::Nightly))]
 #[case::stable(STABLE, Some(Pin::Stable))]
+#[case::stable_channel(STABLE_CHANNEL, Some(Pin::Stable))]
+#[case::beta(BETA, Some(Pin::Stable))]
 #[case::missing(NO_CHANNEL, None)]
 #[case::repeated(TWO_CHANNELS, None)]
 #[case::unknown(UNKNOWN_CHANNEL, None)]
+#[case::unrecognized_nightly_suffix(NIGHTLY_FOO, None)]
+#[case::malformed_nightly_date(MALFORMED_NIGHTLY_DATE, None)]
 fn the_pin_reader_tells_the_channels_apart(#[case] toolchain: &str, #[case] expected: Option<Pin>) {
     assert_eq!(Pin::read(toolchain).ok(), expected);
 }
@@ -183,19 +212,22 @@ fn flags(words: &[&str], inherits: bool) -> Assignment {
 
 /// Scenario: `make -n` output lines in each spelling of an assignment.
 ///
-/// Invariant: a quoted assignment is read, with the caller's inherited flags
-/// set aside, and a line assigning none reads as unassigned.
+/// Invariant: a quoted assignment is read, with the caller's inherited flags set
+/// aside, and a line assigning none reads as unassigned.
 #[rstest]
-#[case::plain("RUSTFLAGS=\"-D warnings -Zthreads=8\" cargo test", flags(&["-D", "warnings", THREADS_FLAG], false))]
+#[case::plain(
+    "RUSTFLAGS=\"-D warnings -Zcodegen-backend=cranelift -Zthreads=8\" cargo test",
+    flags(&["-D", "warnings", BACKEND_FLAG, THREADS_FLAG], false)
+)]
 #[case::inherited_flags_glued_on(
-    "RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }-Zthreads=8\" cargo check",
-    flags(&[THREADS_FLAG], true)
+    "RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }-Zcodegen-backend=cranelift -Zthreads=8\" cargo check",
+    flags(&[BACKEND_FLAG, THREADS_FLAG], true)
+)]
+#[case::shell_wrapper_inherits_caller_flags(
+    r#"bash -c 'effective_flags="${RUSTFLAGS:+$RUSTFLAGS }$make_flags"; exec env RUSTFLAGS="$effective_flags" cargo test' _ '-D warnings'"#,
+    flags(&[], true)
 )]
 #[case::inherited_flags_only("RUSTFLAGS=\"${RUSTFLAGS-}\" cargo build --release", flags(&[], true))]
-#[case::inherited_flags_then_a_space(
-    "RUSTFLAGS=\"${RUSTFLAGS-} -Zthreads=8\" cargo check",
-    flags(&[THREADS_FLAG], true)
-)]
 #[case::no_assignment("cargo clippy --all-targets", Assignment::Unassigned)]
 fn the_command_reader_reads_each_assignment(
     #[case] line: &str,
@@ -215,7 +247,6 @@ fn the_command_reader_reads_each_assignment(
 #[rstest]
 #[case::unquoted("RUSTFLAGS=-Zthreads=8 cargo test")]
 #[case::unterminated("RUSTFLAGS=\"-Zthreads=8 cargo test")]
-#[case::inherited_flags_glued_to_a_flag("RUSTFLAGS=\"${RUSTFLAGS-}-Zthreads=8\" cargo test")]
 fn the_command_reader_refuses_what_it_cannot_parse(#[case] line: &str) -> Result<(), String> {
     match assigned_rustflags(line) {
         Ok(_) => Err(format!("`{line}` was read, not refused")),
@@ -249,8 +280,7 @@ const STEP_INPUT_OFF: &str = concat!(
      org/shared-actions/.github/actions/setup-rust@0123456789abcdef0123456789abcdef01234567\n",
     "        with:\n          install-mold: 'false'\n"
 );
-/// A step without the input, followed by a step that has one for another
-/// action.
+/// A step without the input, followed by a step that has one for another action.
 const STEP_BEFORE_A_SIBLING_THAT_INSTALLS: &str = concat!(
     "    steps:\n      - name: Setup Rust\n",
     "        uses: \
@@ -277,11 +307,7 @@ fn the_workflow_reader_wants_the_input_on_each_step(
     #[case] workflow: &str,
     #[case] expected: usize,
 ) -> Result<(), String> {
-    let found = linker_install_problems(&Workflow {
-        file: "fixture.yml",
-        text: workflow,
-    })
-    .len();
+    let found = linker_install_problems("fixture.yml", workflow).len();
     if found == expected {
         Ok(())
     } else {
@@ -289,80 +315,13 @@ fn the_workflow_reader_wants_the_input_on_each_step(
     }
 }
 
-/// A coverage step that assigns `RUSTFLAGS` without a standard flag.
-const COVERAGE_OK: &str = concat!(
-    "    steps:\n      - name: Cover\n",
-    "        uses: \
-     org/shared-actions/.github/actions/generate-coverage@\
-     0123456789abcdef0123456789abcdef01234567\n",
-    "        env:\n          RUSTFLAGS: -D warnings\n"
-);
-/// A coverage step with no assignment.
-const COVERAGE_UNASSIGNED: &str = concat!(
-    "    steps:\n      - name: Cover\n",
-    "        uses: \
-     org/shared-actions/.github/actions/generate-coverage@\
-     0123456789abcdef0123456789abcdef01234567\n"
-);
-/// A coverage step that takes the frontend flag.
-const COVERAGE_WITH_THREADS: &str = concat!(
-    "    steps:\n      - name: Cover\n",
-    "        uses: \
-     org/shared-actions/.github/actions/generate-coverage@\
-     0123456789abcdef0123456789abcdef01234567\n",
-    "        env:\n          RUSTFLAGS: -D warnings -Zthreads=8\n"
-);
-/// A coverage step that takes mold.
-const COVERAGE_WITH_LINKER: &str = concat!(
-    "    steps:\n      - name: Cover\n",
-    "        uses: \
-     org/shared-actions/.github/actions/generate-coverage@\
-     0123456789abcdef0123456789abcdef01234567\n",
-    "        env:\n          RUSTFLAGS: -Clink-arg=-fuse-ld=mold\n"
-);
-/// A coverage step whose assignment belongs to the next step.
-const COVERAGE_BORROWING_A_SIBLING: &str = concat!(
-    "    steps:\n      - name: Cover\n",
-    "        uses: \
-     org/shared-actions/.github/actions/generate-coverage@\
-     0123456789abcdef0123456789abcdef01234567\n",
-    "      - name: Other\n        env:\n          RUSTFLAGS: -D warnings\n"
-);
-
-/// Scenario: coverage steps with and without an explicit assignment.
-///
-/// Invariant: the step assigns `RUSTFLAGS` itself and names neither standard
-/// flag; a sibling step's assignment does not count.
-#[rstest]
-#[case::assigned(COVERAGE_OK, 0)]
-#[case::unassigned(COVERAGE_UNASSIGNED, 1)]
-#[case::with_the_frontend_flag(COVERAGE_WITH_THREADS, 1)]
-#[case::with_the_linker(COVERAGE_WITH_LINKER, 1)]
-#[case::assignment_on_a_sibling_step(COVERAGE_BORROWING_A_SIBLING, 1)]
-fn the_coverage_reader_wants_an_explicit_assignment(
-    #[case] workflow: &str,
-    #[case] expected: usize,
-) -> Result<(), String> {
-    let found = coverage_problems(&Workflow {
-        file: "fixture.yml",
-        text: workflow,
-    })
-    .len();
-    if found == expected {
-        Ok(())
-    } else {
-        Err(format!("{workflow:?}: {found} problems, not {expected}"))
-    }
-}
-
-/// Every workflow that builds under the standard installs mold. A repository
+/// Every workflow that builds under the standard installs `mold`. A repository
 /// whose workflows do not set up Rust through `setup-rust` lists none, and the
 /// check then reads nothing; a listed workflow must have a step to read.
 #[test]
 fn every_setup_rust_step_installs_linker() -> Result<(), String> { none_of(&workflow_problems()) }
 
-/// Scenario: a recipe continued over lines, beside an `echo` and another
-/// command.
+/// Scenario: a recipe continued over lines, beside an `echo` and another command.
 ///
 /// Invariant: the continued command is one command, and lines that are not a
 /// Cargo or Whitaker command are ignored.
@@ -385,8 +344,8 @@ fn every_rustflags_source_is_consistent_with_the_pin() -> Result<(), String> {
 }
 
 #[test]
-fn development_targets_restate_the_flags_on_linux() -> Result<(), String> {
-    let (problems, read) = development_problems(Host::Linux, Pin::read(TOOLCHAIN)?)?;
+fn development_targets_restate_the_flags_on_x86_64_gnu_linux() -> Result<(), String> {
+    let (problems, read) = development_problems(Host::LinuxX86, Pin::read(TOOLCHAIN)?)?;
     none_of(&problems)?;
     if read == 0 {
         return Err(
@@ -396,14 +355,16 @@ fn development_targets_restate_the_flags_on_linux() -> Result<(), String> {
     Ok(())
 }
 
-#[test]
-fn development_targets_keep_the_frontend_but_not_the_linker_elsewhere() -> Result<(), String> {
-    none_of(&development_problems(Host::Darwin, Pin::read(TOOLCHAIN)?)?.0)
+#[rstest]
+#[case::linux_aarch64(Host::LinuxArm)]
+#[case::macos_x86_64(Host::Darwin)]
+fn development_targets_do_not_leak_flags_to_other_hosts(#[case] host: Host) -> Result<(), String> {
+    none_of(&development_problems(host, Pin::read(TOOLCHAIN)?)?.0)
 }
 
-/// Coverage measures and release ships, so both stay on the default flags. A
-/// repository that lists no such target has nothing local to hold out, and the
-/// check then reads no commands; otherwise it must read at least one.
+/// Coverage measures and release ships, so both clear the development flags
+/// and select their own compiler route. Each listed target must run at least
+/// one Cargo command so the check cannot pass without measuring a route.
 #[test]
 fn coverage_and_release_take_neither_flag() -> Result<(), String> {
     let (problems, read) = held_out_problems()?;

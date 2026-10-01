@@ -28,8 +28,8 @@ duplicating the list.
 The baseline follows the estate's phase 2 Rust conventions: hygiene and
 panic-prone operations are denied outright (`unwrap_used`, `indexing_slicing`,
 `unreachable`, and similar), `pedantic` is enabled as a warning tier, and
-`missing_docs` and `missing_crate_level_docs` require real documentation rather
-than suppression.
+`missing_docs_in_private_items`, `missing_docs`, and `missing_crate_level_docs`
+require real documentation rather than suppression.
 
 Where a lint violation is a genuine, tracked deferral rather than a bug,
 annotate the site with `#[expect(clippy::<lint>, reason = "...")]`, never
@@ -160,6 +160,12 @@ publisher is the only baseline writer. Both coverage steps select the same
 inputs at the same `shared-actions` pin because the pull-request ratchet is
 only meaningful against a baseline measured the same way.
 
+The repository-specific build-standard tests use
+`tests/workflow_contracts/workflow_contract_support.py` only for strict YAML
+reading and workflow-shape access. Keep build, coverage, and route assertions
+in their corresponding `*_rules.py` modules; do not extend the helper with
+another copy of shared CV-005 policy.
+
 `make test-workflow-contracts` holds this shape by running
 `cv005-contracts check`, the shared contract library in `leynos/shared-actions`
 (`packages/cv005-contracts`), from a full commit named by `CV005_CONTRACTS_REF`
@@ -214,43 +220,39 @@ own `RUSTFLAGS`) and for each coverage and release target on a Linux host, and
 the `setup-rust` steps of the CI workflows (each must pass `install-mold`), so
 a flag lost through a recipe or workflow edit fails there.
 
-### Cranelift
+### Backend support
 
-Exception: Cranelift is not the default backend in `.cargo/config.toml`. The
-repository pins `nightly-2026-05-28`, but the release workflow
-(`cross +stable build --release`) builds on a stable toolchain against
-`.cargo/config.toml`, and stable Cargo refuses a
-`[profile.dev] codegen-backend` key ("config profile `dev` is not valid"), so a
-backend selected there would break every release (recorded 2026-09-29). The
-standard make targets select Cranelift instead, by passing
-`--config tools/dev-fast/config.toml`, which holds only the backend selection;
-coverage and release builds never pass it. A contract fails if a
-`codegen-backend` key reaches `.cargo/config.toml` while the release builds on
-`+stable`. `tests/stable_cargo_config.rs` also asks stable Cargo itself, through
-`rustup run stable cargo build --release --bin no-such-bin`: stable Cargo
-resolves every configured profile before it looks up the target, so a refused
-configuration and an accepted one differ in the message, and nothing compiles.
-The probe must run on stable, because a nightly Cargo accepts a backend that
-stable refuses. The test therefore needs the stable toolchain installed
-(`rustup toolchain install stable --profile minimal`); CI installs it before
-the tests run. Revisit if the release moves to the pinned nightly.
+Cranelift is excluded from the development defaults and pinned toolchain
+components. With Cranelift selected on the pinned `nightly-2026-05-28` Linux
+toolchain, the `catch_unwind` contract fails and a panicking joined thread
+aborts with `failed to initiate panic, error 5`. Both probes pass on LLVM, so
+the standard retains LLVM until Cranelift supports these panic paths. The
+[follow-up issue #80](https://github.com/leynos/evert/issues/80) schedules a
+review for 1 April 2027; the tests must remain intact when support is
+reassessed.
 
 ## Tooling
 
-Development builds use the build standard described below: `-Zthreads=8` and,
-on Linux, clang linking with `mold`, from `.cargo/config.toml`. The standard
-make targets also select the Cranelift backend by passing
-`--config tools/dev-fast/config.toml`, as do `make dev-build` and
-`make dev-test`; that fragment holds only the backend selection and is never
-applied to release, coverage, or verification builds (see
-[Fast development builds](../AGENTS.md#fast-development-builds) in
-`AGENTS.md`). Coverage generation uses `lld` and LLVM because coverage tooling
-expects them. The pinned nightly toolchain retains the `llvm-tools-preview` and
-`rustc-codegen-cranelift-preview` components, so both paths have what they need
-installed.
+The LLVM and pinned `mold` development route applies to
+`x86_64-unknown-linux-gnu`; other targets use LLVM and their platform linker.
+Run `make install-build-tools` to provision the pinned nightly and local build
+tools, including `mold` 2.41.0 and the `evert-clang-mold` wrapper. Standard
+Make targets add the install directory to `PATH` and check prerequisites before
+compiling. Bare Cargo commands on the selected target need the same directory on
+`PATH`. The wrapper source is `scripts/clang-linker.sh`; it checks the pinned
+linker and passes its directory to Clang so the system linker cannot take
+precedence. Coverage uses LLVM and `lld` for compatibility with coverage
+tooling. The pinned nightly includes the `llvm-tools-preview` component.
 
 Install `clang`, `lld`, `mold`, `python3`, and `cargo-audit` before running the
 full generated workflow locally on Linux.
+
+On `x86_64-unknown-linux-gnu`, development, test, lint, and typecheck use this
+LLVM and pinned-linker route. Cargo's target table also applies to a direct
+cross build *to* `x86_64-unknown-linux-gnu` from another host. That cross-host
+development route is unsupported: the linker wrapper and pinned `mold`
+installation target the Linux build host. Use the Linux host for development
+builds; the stable Cross release workflow handles explicit release targets.
 
 ### Security audit ignores
 

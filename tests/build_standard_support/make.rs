@@ -1,23 +1,24 @@
-//! Readers for the Makefile half of the build standard: the commands `make -n`
-//! prints for each development, coverage and release target, judged against a
-//! toolchain pin and a host.
+//! Readers for the Makefile half of the build standard: the commands
+//! `make -n` prints for each development, coverage and release target, judged
+//! against a toolchain pin and a host.
 
 use std::process::Command;
 
-use super::config::{Flags, LINKER_FLAG, Pin, Problems, THREADS_FLAG};
+use super::config::{
+    BACKEND_FLAG,
+    Flags,
+    LINKER_DRIVER_FLAG,
+    LINKER_FLAG,
+    Pin,
+    Problems,
+    THREADS_FLAG,
+};
 
 /// Makefile targets that build for development. A command in one either assigns
 /// `RUSTFLAGS` with the standard flags or assigns none and so takes the
 /// configuration's. The list is this repository's own, and a target that stops
 /// being defined fails the contract rather than dropping out of it.
-const DEVELOPMENT_TARGETS: &[&str] = &[
-    "test",
-    "typecheck",
-    "lint",
-    "build",
-    "dev-build",
-    "dev-test",
-];
+const DEVELOPMENT_TARGETS: &[&str] = &["test", "typecheck", "lint", "build"];
 /// Makefile targets that measure or ship, so every command assigns `RUSTFLAGS`
 /// and none carries a standard flag.
 const HELD_OUT_TARGETS: &[&str] = &["coverage", "release"];
@@ -25,7 +26,8 @@ const HELD_OUT_TARGETS: &[&str] = &["coverage", "release"];
 /// The host `make` is told it runs on, through `BUILD_HOST_OS`.
 #[derive(Clone, Copy)]
 pub enum Host {
-    Linux,
+    LinuxX86,
+    LinuxArm,
     Darwin,
 }
 
@@ -33,13 +35,21 @@ impl Host {
     /// Returns the value `uname -s` reports for the host.
     const fn make_value(self) -> &'static str {
         match self {
-            Self::Linux => "Linux",
+            Self::LinuxX86 | Self::LinuxArm => "Linux",
             Self::Darwin => "Darwin",
         }
     }
 
-    /// Returns whether the host takes mold, which ships for Linux alone.
-    const fn takes_linker_flag(self) -> bool { matches!(self, Self::Linux) }
+    /// Returns the host architecture Make uses to scope its development flags.
+    const fn arch_value(self) -> &'static str {
+        match self {
+            Self::LinuxX86 | Self::Darwin => "x86_64",
+            Self::LinuxArm => "aarch64",
+        }
+    }
+
+    /// Returns whether the host takes the selected development route.
+    const fn takes_development_flags(self) -> bool { matches!(self, Self::LinuxX86) }
 }
 
 /// What one `make -n` command assigns to `RUSTFLAGS`.
@@ -59,14 +69,19 @@ pub enum Assignment {
 /// assigned_rustflags("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }-Zthreads=8\" cargo test") -> inherits: true
 /// assigned_rustflags("cargo test")                           -> Unassigned
 /// assigned_rustflags("RUSTFLAGS=-Zthreads=8 cargo test")     -> Err
-/// assigned_rustflags("RUSTFLAGS=\"${RUSTFLAGS-}-Zthreads=8\" cargo test") -> Err (glued)
 /// ```
 ///
 /// # Errors
 ///
-/// Returns the reason when an assignment is unquoted, unterminated, or glues the
-/// caller's flags to the next one.
+/// Returns the reason when an assignment is unreadable or glues inherited
+/// flags to the following flag.
 pub fn assigned_rustflags(line: &str) -> Result<Assignment, String> {
+    if line.contains("effective_flags=") && line.contains("exec env RUSTFLAGS=\"$effective_flags\"")
+    {
+        // The shell wrapper receives Make's flags as `$make_flags`; it passes
+        // those separately and only inherits the caller's environment here.
+        return Ok(Assignment::Flags(Flags::from_words([]), true));
+    }
     let Some((_, rest)) = line.split_once("RUSTFLAGS=\"") else {
         if line.contains("RUSTFLAGS=") {
             return Err(format!("unreadable RUSTFLAGS assignment in `{line}`"));
@@ -76,9 +91,6 @@ pub fn assigned_rustflags(line: &str) -> Result<Assignment, String> {
     let (assigned, _) = rest
         .split_once('"')
         .ok_or_else(|| format!("unterminated RUSTFLAGS in `{line}`"))?;
-    // The recipes prepend the caller's own flags with these expansions; they are
-    // not standard flags. `${RUSTFLAGS-}` adds no separator, so glued to the next
-    // word it makes one token with it (`-Dwarnings-Zthreads=8`) and hides the flag.
     let glued = assigned
         .split("${RUSTFLAGS-}")
         .skip(1)
@@ -88,8 +100,12 @@ pub fn assigned_rustflags(line: &str) -> Result<Assignment, String> {
             "inherited RUSTFLAGS glued to the next flag in `{line}`"
         ));
     }
-    let inherits =
-        assigned.contains("${RUSTFLAGS:+$RUSTFLAGS }") || assigned.contains("${RUSTFLAGS-}");
+    // The recipes prepend the caller's own flags with these expansions; they are
+    // not standard flags, and glued to the next word they would hide it.
+    let inherits = assigned.contains("${RUSTFLAGS:+$RUSTFLAGS }")
+        || assigned.contains("${RUSTFLAGS-}")
+        || line.contains("effective_flags=\"${RUSTFLAGS:+$RUSTFLAGS }")
+        || line.contains("effective_flags=\"${RUSTFLAGS-}");
     let own = assigned
         .replace("${RUSTFLAGS:+$RUSTFLAGS }", " ")
         .replace("${RUSTFLAGS-}", " ");
@@ -99,7 +115,8 @@ pub fn assigned_rustflags(line: &str) -> Result<Assignment, String> {
     ))
 }
 
-/// Reads the assignment of each cargo or whitaker command `make -n` printed.
+/// Reads the assignment of each Cargo command `make -n` printed. Whitaker
+/// deliberately uses another compiler route, so it is excluded here.
 ///
 /// # Errors
 ///
@@ -110,7 +127,7 @@ pub fn commands_from(stdout: &str) -> Result<Vec<Assignment>, String> {
     joined
         .lines()
         .filter(|line| !line.trim_start().starts_with("echo"))
-        .filter(|line| line.contains("cargo") || line.contains("whitaker"))
+        .filter(|line| line.contains("cargo"))
         .map(assigned_rustflags)
         .collect()
 }
@@ -122,9 +139,10 @@ fn make_commands(target: &str, host: Host) -> Result<Vec<Assignment>, String> {
             "-n",
             "-B",
             &format!("BUILD_HOST_OS={}", host.make_value()),
+            &format!("BUILD_HOST_ARCH={}", host.arch_value()),
             target,
         ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), ""))
         .output()
         .map_err(|error| format!("running make: {error}"))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -137,8 +155,8 @@ fn make_commands(target: &str, host: Host) -> Result<Vec<Assignment>, String> {
 }
 
 /// Returns the complaint about one development command, if any: an assigned
-/// `RUSTFLAGS` keeps the caller's own flags and restates the frontend flag on a
-/// nightly pin, and mold on Linux.
+/// `RUSTFLAGS` keeps the caller's own flags and restates the frontend and
+/// linker flags on a nightly pin and the selected Linux target.
 fn development_problem(
     target: &str,
     host: Host,
@@ -154,7 +172,9 @@ fn development_problem(
             host.make_value()
         ));
     }
-    let reason = flags.meets(pin, host.takes_linker_flag()).err()?;
+    let reason = flags
+        .meets(pin.takes_threads() && host.takes_development_flags())
+        .err()?;
     Some(format!("`make {target}` on {} {reason}", host.make_value()))
 }
 
@@ -183,7 +203,8 @@ pub fn development_problems(host: Host, pin: Pin) -> Result<(Problems, usize), S
 }
 
 /// Returns every complaint about one held-out command: it assigns nothing, so
-/// it takes the configuration's flags, or the assignment names a standard flag.
+/// it takes the configuration's flags, or the assignment names a development
+/// flag.
 fn held_out_command_problems(target: &str, assignment: &Assignment) -> Problems {
     let Assignment::Flags(flags, _) = assignment else {
         return vec![format!(
@@ -191,7 +212,9 @@ fn held_out_command_problems(target: &str, assignment: &Assignment) -> Problems 
         )];
     };
     let named = [
+        (flags.names_backend(), BACKEND_FLAG),
         (flags.names_threads(), THREADS_FLAG),
+        (flags.names_linker_driver(), LINKER_DRIVER_FLAG),
         (flags.names_linker(), LINKER_FLAG),
     ];
     named
@@ -212,7 +235,7 @@ pub fn held_out_problems() -> Result<(Problems, usize), String> {
     let mut problems = Vec::new();
     let mut read = 0;
     for target in HELD_OUT_TARGETS {
-        let commands = make_commands(target, Host::Linux)?;
+        let commands = make_commands(target, Host::LinuxX86)?;
         read += commands.len();
         problems.extend(
             commands

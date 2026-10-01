@@ -6,6 +6,9 @@ __pycache__/
 .typos-oxendict-base.toml
 .uv-cache/
 .uv-tools/
+.node_modules/
+node_modules/
+dist/
 .vtcode/
 .claude/
 .memdb/

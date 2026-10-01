@@ -26,15 +26,18 @@ jobs:
     permissions:
       contents: read
       id-token: write # OIDC workflow-source resolution
-    uses: leynos/shared-actions/.github/workflows/mutation-cargo.yml@22c1a57865e42ba7e2ca4f88ae49fa6f81f58013
+    uses: leynos/shared-actions/.github/workflows/mutation-cargo.yml@9a27950942334d69ff79005b3a8db23bf151f43f
     with:
       # Match the CI baseline (`make test` runs --all-features) so any
       # feature-gated tests run against mutants.
       extra-args: "--all-features"
-      # .cargo/config.toml links with clang and mold on
-      # x86_64-unknown-linux-gnu, so mutants jobs need both installed,
-      # exactly as CI's "Install mold linker" step does.
+      install-mold: 'true'
+      # The suite may run Make targets that check the pinned build tools.
+      # The reusable workflow runs these commands after checkout and before
+      # cargo-mutants; its setup-rust RUSTFLAGS keep mutant builds on LLVM.
       setup-commands: |
         export DEBIAN_FRONTEND=noninteractive
         sudo apt-get update
-        sudo apt-get install --yes --no-install-recommends clang lld mold
+        sudo apt-get install --yes --no-install-recommends clang lld
+        make install-build-tools
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"

@@ -1,21 +1,17 @@
-//! Runs stable Cargo against this repository's `.cargo/config.toml`.
+//! Checks that stable Cargo can read the repository configuration after the
+//! release route clears the development rustflags.
 //!
-//! `build_backend_contract.rs` reads the configuration and the release
-//! workflow as text. This test asks the tool the release actually uses: stable
-//! Cargo resolves every configured profile before it looks for the target it
-//! was asked to build, and stops with "config profile `dev` is not valid" when
-//! one selects a codegen backend. Asking it to build a binary that does not
-//! exist therefore reaches that check and then fails on the missing target,
-//! without compiling anything, so a refused configuration and an accepted one
-//! differ in the message. That is the failure that broke catnap's v0.1.0
-//! release.
+//! This probe deliberately asks for a missing binary, so Cargo must load the
+//! project configuration but never invokes rustc or compiles the repository.
+//! The build-backend contract checks both stable release command routes; the
+//! verbose release probe records the compiler arguments separately.
 
 use std::process::Command;
 
 use rstest::rstest;
 
-/// Stable Cargo's refusal of a configured profile.
-const REFUSED: &str = "is not valid";
+/// Stable Cargo's diagnostic when it cannot accept the configuration.
+const CONFIG_REFUSAL: &str = "is not valid";
 /// What stable Cargo reports once the configuration has loaded.
 const ACCEPTED: &str = "no bin target named";
 
@@ -26,7 +22,7 @@ const ACCEPTED: &str = "no bin target named";
 /// rather than read as a pass, so an environment that cannot run the probe
 /// cannot certify the configuration.
 fn judge(stderr: &str) -> Result<(), String> {
-    if stderr.contains(REFUSED) {
+    if stderr.contains(CONFIG_REFUSAL) {
         return Err(format!(
             "stable Cargo refused the repository configuration:\n{stderr}"
         ));
@@ -50,7 +46,7 @@ fn judge(stderr: &str) -> Result<(), String> {
 /// unrecognized output, such as a missing toolchain, both fail.
 #[rstest]
 #[case::configuration_loaded("error: no bin target named `no-such-bin`\n", true)]
-#[case::profile_refused(
+#[case::unsupported_configuration_refused(
     concat!(
         "error: config profile `dev` is not valid (defined in `.cargo/config.toml`)\n\n",
         "Caused by:\n  feature `codegen-backend` is required\n"
@@ -71,7 +67,7 @@ fn the_probe_output_is_judged_strictly(#[case] stderr: &str, #[case] passes: boo
 ///
 /// Invariant: it reaches the target lookup, so it accepted the configuration.
 #[test]
-fn stable_cargo_accepts_the_repository_configuration() {
+fn stable_cargo_accepts_configuration_with_release_flag_overrides() {
     let output = Command::new("rustup")
         .args([
             "run",
@@ -84,12 +80,11 @@ fn stable_cargo_accepts_the_repository_configuration() {
             "no-such-bin",
         ])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        // The release assigns an empty `RUSTFLAGS`, which displaces the
-        // configuration's nightly-only `-Zthreads` flag before stable rustc
-        // sees it. The probe does the same: the `RUSTFLAGS` the make targets
-        // export carry `-Zthreads`, which stable rustc refuses outright.
-        // Profile validity, the subject here, does not depend on the flags.
+        // The release clears both Cargo flag sources before stable Cargo
+        // starts. This probe uses the same environment while leaving the
+        // repository's configuration in place for Cargo to discover.
         .env("RUSTFLAGS", "")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .output()
         .expect("running `rustup run stable cargo`");
     if let Err(reason) = judge(&String::from_utf8_lossy(&output.stderr)) {

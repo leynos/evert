@@ -27,6 +27,9 @@ set.
 
 ## Engineering practice
 
+- [Cranelift unwind investigation](
+  debugging/debugging-plan-2026-09-29-cranelift-unwind-test-abort.md) documents
+  the exclusion and the evidence required before the backend is reconsidered.
 - [Complexity antipatterns and refactoring strategies](complexity-antipatterns-and-refactoring-strategies.md)
   explains cognitive complexity, the bumpy-road antipattern, and refactoring
   approaches for maintainable code.
