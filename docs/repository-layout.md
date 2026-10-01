@@ -17,6 +17,7 @@ compact and omits build output such as `target/`.
 │   ├── dependabot.yml
 │   └── workflows/
 │       ├── act-validation.yml
+│       ├── audit.yml
 │       ├── ci.yml
 │       ├── coverage-main.yml
 
@@ -34,6 +35,10 @@ compact and omits build output such as `target/`.
 │   └── main.rs
 
 ├── tests/
+│   ├── build_backend_contract.rs
+│   ├── build_standard_contract.rs
+│   ├── build_standard_support/
+│   ├── stable_cargo_config.rs
 │   ├── stub.rs
 │   └── workflow_contracts/
 ├── tools/
@@ -56,6 +61,7 @@ compact and omits build output such as `target/`.
 - `.github/dependabot.yml`: Configures automated dependency update checks.
 - `.github/workflows/act-validation.yml`: Runs the generated workflow
   validation through `act` separately from main CI.
+- `.github/workflows/audit.yml`: Audits dependencies on a weekly schedule.
 - `.github/workflows/ci.yml`: Runs the generated project's continuous
   integration checks.
 - `.github/workflows/coverage-main.yml`: Measures coverage on each push to
@@ -85,6 +91,13 @@ compact and omits build output such as `target/`.
   behaviour.
 - `tests/stub.rs`: Keeps the generated test directory valid until real tests
   replace it.
+- `tests/build_backend_contract.rs`: Fails when a codegen-backend key sits in
+  `.cargo/config.toml` while the release builds on stable.
+- `tests/build_standard_contract.rs` and `tests/build_standard_support/`: Hold
+  the build standard's flags in the Cargo configuration, the Makefile recipes
+  and the setup-rust steps.
+- `tests/stable_cargo_config.rs`: Asks stable Cargo itself to read
+  `.cargo/config.toml`.
 - `tests/workflow_contracts/`: Holds the pytest contract for the
   mutation-testing caller workflow, run by `make test-workflow-contracts`,
   which also runs the shared CV-005 contract library.
