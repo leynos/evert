@@ -32,6 +32,10 @@
   lines.  Long switch statements or dispatch tables should be broken up by
   feature and constituents colocated with targets. Large blocks of test data
   should be moved to external data files.
+- **Do not silence Python lints.** Fix the code rather than adding `# noqa`,
+  `# pylint: disable`, or `# type: ignore`. The only exemptions are `assert` in
+  tests and the process helper `command_runner.py` under
+  `tests/workflow_contracts/`; see the developers' guide.
 
 ## Documentation maintenance
 
@@ -140,7 +144,8 @@ project:
     files.
   - `make lint` runs rustdoc with warnings denied, Clippy for all workspace
     targets and features with warnings denied, and the Whitaker Dylint suite
-    across workspace packages.
+    across workspace packages. It then runs the Python lint gateway (Ruff,
+    Pylint, df12 house lints, ambrleaks, and Interrogate on CPython 3.14).
   - `make test` runs `cargo nextest run` when cargo-nextest is installed, or
     `cargo test` otherwise, with all workspace targets and features. It also
     runs doctests for all workspace packages and features.

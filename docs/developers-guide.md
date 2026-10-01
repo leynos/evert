@@ -5,7 +5,8 @@ This guide explains the contributor workflow for the generated Evert project.
 ## Local Workflow
 
 Use `make all` as the public entrypoint for formatting, linting, and tests.
-`make lint` runs rustdoc, Clippy, and Whitaker. `make test` prefers
+`make lint` runs rustdoc, Clippy, and Whitaker, then the
+[Python lint gateway](#python-lint-gateway). `make test` prefers
 `cargo nextest run` and falls back to `cargo test` when cargo-nextest is not
 available. `make audit` derives the Rust workspace root with `cargo metadata`,
 logs workspace member manifests, and runs `cargo audit` once from the workspace
@@ -47,6 +48,67 @@ code, or use a stub environment in tests.
 The pinned nightly toolchain in `rust-toolchain.toml` supplies the `rustfmt`,
 `clippy`, and `rust-analyzer` components the baseline and this workflow depend
 on.
+
+## Python lint gateway
+
+`make lint` runs the Rust gates first and the Python gates after them, with
+warnings denied. `make lint-python` runs the Python gates on their own. In
+order, it runs:
+
+- Ruff (`ruff check`), pinned by `RUFF_VERSION` (0.16.4).
+- Pylint, pinned by `PYLINT_VERSION` (4.0.9), with the selected message set
+  enabled in `pyproject.toml`.
+- The df12 house lints, a Pylint plugin from `leynos/df12-python-lints`, pinned
+  by `DF12_PYTHON_LINTS_REF` (tag `v0.3.0`). `DF12_PYLINT_MESSAGES` lists the
+  R9101-R9112 and C9102-C9112 messages the target enables.
+- `ambrleaks`, from the same df12 package and ref.
+- Interrogate, pinned by `INTERROGATE_VERSION` (1.7.0), with `--fail-under 100`.
+  Every module, class, function, nested function, and test needs a docstring.
+
+Rule sets differ between releases, so each tool is pinned exactly. To bump one,
+change its Makefile variable and fix the new findings in the same commit.
+
+`pyproject.toml` only configures these linters. It has no `[project]` or
+`[build-system]` table, so nothing can be built or published from it and `uv`
+never treats the repository as a Python project. It mirrors the Ruff and Pylint
+configuration of `leynos/netsuke`, which itself mirrors `leynos/episodic`; only
+path-shaped settings are local.
+
+All tools run on CPython 3.14 through `uv tool run`. `uv` fetches a managed
+3.14 interpreter, so contributors need `uv` but not a system Python 3.14.
+`make test-workflow-contracts` runs pytest on the same baseline. The baseline
+is set in three places, which must agree: `PYTHON_BASELINE` in the `Makefile`
+(3.14), `target-version` (`py314`) and `py-version` in `pyproject.toml`.
+
+`PYTHON_SOURCE_ROOTS` in the `Makefile` lists the source roots:
+`.github/scripts`, `.github/actions`, `scripts`, `tests`, `benches`, and
+`benchmarks`. Only roots that contain Python are linted, so a new script,
+benchmark, or workflow-run module is covered as soon as it exists. Today only
+`tests/workflow_contracts/` holds Python.
+
+Do not silence a Python lint: no `# noqa`, `# pylint: disable`, or
+`# type: ignore`. Fix the code. Two exemptions are configured, both scoped by
+file in `pyproject.toml`:
+
+- Ruff's `assert` rule (`S101`) for files under `tests/`, because pytest relies
+  on plain `assert` statements and rewrites them to report the compared values.
+- Ruff's subprocess import and call rules (`S404` and `S603`) for
+  `tests/workflow_contracts/command_runner.py` alone. No code change satisfies
+  those two rules, and some contracts can only be proved by running the real
+  tools, so all process spawning goes through that one helper. It uses no
+  shell, takes a fixed argument list, and resolves the executable itself;
+  `command_runner_test.py` holds those properties. Every other module that
+  imports `subprocess` fails the gate.
+
+Docstrings follow the numpy convention (Ruff's `D` and `DOC` rules). The line
+length is 88, and a module may have at most 400 lines, matching the
+repository's file-size ceiling.
+
+`tests/workflow_contracts/python_lint_gateway_test.py` guards the wiring. It
+fails if a Python file sits outside the source roots, if the three baseline
+settings disagree, if `lint` stops depending on `lint-python`, if a tool is
+missing from the recipe, or if a tool version or the df12 ref is not an exact
+pin.
 
 ## Spelling policy
 

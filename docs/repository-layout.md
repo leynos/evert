@@ -65,15 +65,20 @@ compact and omits build output such as `target/`.
 │       ├── build_tools_runner_test.py
 │       ├── build_tools_test.py
 │       ├── cargo_selection_test.py
-│       ├── codescene_build_tools_test.py
-│       ├── codescene_coverage_route_test.py
-│       ├── codescene_toolchain_rules.py
-│       ├── codescene_toolchain_test.py
+│       ├── command_runner.py
+│       ├── command_runner_test.py
+│       ├── coverage_build_tools_test.py
+│       ├── coverage_flags_test.py
+│       ├── coverage_toolchain_rules.py
+│       ├── coverage_toolchain_test.py
 │       ├── markdown_formatting_test.py
 │       ├── mutation_testing_test.py
+│       ├── python_lint_gateway_test.py
 │       ├── supported_route_inventory_test.py
+│       ├── supported_route_rules.py
 │       ├── whitaker_provisioning_rules.py
-│       └── whitaker_provisioning_test.py
+│       ├── whitaker_provisioning_test.py
+│       └── workflow_contract_support.py
 ├── tools/
 │   └── mold/
 │       ├── SHA256SUMS
@@ -85,6 +90,7 @@ compact and omits build output such as `target/`.
 ├── README.md
 ├── clippy.toml
 ├── codecov.yml
+├── pyproject.toml
 └── rust-toolchain.toml
 ```
 
@@ -145,8 +151,11 @@ compact and omits build output such as `target/`.
 - `tests/workflow_contracts/`: Holds pytest contracts for build-tool
   provisioning, Cargo selection, CodeScene build and coverage routes, toolchain
   routing, Markdown formatting, mutation testing, supported-route inventory,
-  and Whitaker provisioning. `make test-workflow-contracts` also runs the
-  shared CV-005 contracts with `.github/cv005.toml`.
+  and Whitaker provisioning. `python_lint_gateway_test.py` guards the Python
+  lint gateway wiring in the `Makefile` and `pyproject.toml`, and
+  `command_runner.py` is the one place these tests start a process.
+  `make test-workflow-contracts` also runs the shared CV-005 contracts with
+  `.github/cv005.toml`.
 - `scripts/`: Installs and checks the pinned development compiler and linker
   prerequisites used by the Makefile.
 - `scripts/build-tools-common.sh`: Shares build-tool paths and checks between
@@ -176,6 +185,8 @@ compact and omits build output such as `target/`.
 - `clippy.toml`: Configures Clippy lint behaviour that is not expressed
   directly in `Cargo.toml`.
 - `codecov.yml`: Configures coverage reporting behaviour.
+- `pyproject.toml`: Configures Ruff and Pylint for the Python lint gateway. It
+  defines no Python project.
 - `rust-toolchain.toml`: Pins the Rust toolchain channel and required
   components.
 

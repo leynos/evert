@@ -19,7 +19,10 @@ The generated `Makefile` exposes these public targets:
 
 - `make all` runs formatting, linting, tests, spelling, and workflow contracts.
 - `make check-fmt` verifies Rust and Markdown formatting.
-- `make lint` runs rustdoc, Clippy, and Whitaker with warnings denied.
+- `make lint` runs rustdoc, Clippy, and Whitaker, then the Python linters, with
+  warnings denied.
+- `make lint-python` runs only the Python linters: Ruff, Pylint, the df12 house
+  lints, `ambrleaks`, and Interrogate.
 - `make test` runs `cargo nextest run` when cargo-nextest is installed and
   falls back to `cargo test` otherwise. All projects also run doctests.
 - `make test-workflow-contracts` runs the shared CV-005 workflow checks and
@@ -45,5 +48,6 @@ target need `$BUILD_TOOLS_PREFIX/bin` on `PATH`; Make targets add it
 automatically. Other Linux targets use their platform linker, while non-Linux
 targets keep their platform linker. Install clang, python3, and cargo-audit
 before running the full generated workflow locally on Linux; coverage also
-requires lld. The [developers' guide](developers-guide.md) describes the
-backend and linker routing.
+requires lld. The Python linters and workflow contract tests use `uv`, which
+fetches CPython 3.14 on demand. The [developers' guide](developers-guide.md)
+describes the backend and linker routing.

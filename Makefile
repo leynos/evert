@@ -1,6 +1,7 @@
 .PHONY: help all clean test build release coverage lint fmt check-fmt \
 	markdownlint nixie audit rust-audit spelling test-workflow-contracts \
-	typecheck install-build-tools check-build-tools lint-clippy lint-whitaker
+	typecheck install-build-tools check-build-tools lint-clippy lint-whitaker \
+	lint-python
 
 # Keep the composite gates sequential even when a caller uses `make -j`.
 .NOTPARALLEL: all lint
@@ -37,10 +38,50 @@ WHITAKER_PACKAGES ?= --all
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 
-# The Python baseline every uv-driven Python helper pins. The workflow contract
-# tests rely on the deferred annotation evaluation CPython 3.14 introduced, so
-# they run on this baseline rather than on whichever interpreter uv selects.
+# The Python baseline every uv-driven Python helper pins. Bump it together with
+# `target-version` and `py-version` in pyproject.toml; the workflow contract
+# tests hold the three in sync.
 PYTHON_BASELINE ?= 3.14
+
+# The Python lint gateway mirrors leynos/netsuke. Each tool is pinned so `make`
+# and CI run the same release: rule sets differ between releases, and an
+# unpinned install fails the gate without any code change. Bump deliberately
+# and fix new findings in the same commit.
+RUFF_VERSION ?= 0.16.4
+RUFF = $(UV_ENV) $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
+# Pylint must run on the baseline so it parses every owned source; the
+# `--load-plugins=` argument clears configured plugins so this pass runs
+# exactly the messages pyproject.toml enables.
+PYLINT_VERSION ?= 4.0.9
+PYLINT = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
+	--from 'pylint==$(PYLINT_VERSION)' pylint --load-plugins=
+# The df12 house lints need CPython 3.14: they parse syntax older runtimes
+# cannot, and the baseline-gated messages (R9112, C9112) key off the
+# `py-version` in pyproject.toml. They run through `uv tool run` so the
+# repository never needs a project virtual environment for a Rust
+# contributor's sake.
+DF12_PYTHON_LINTS_REF ?= v0.3.0
+DF12_PYTHON_LINTS = git+https://github.com/leynos/df12-python-lints.git@$(DF12_PYTHON_LINTS_REF)
+DF12_PYLINT_MESSAGES = R9101,C9102,R9103,R9104,C9105,C9106,C9107,R9108,R9109,R9110,R9111,R9112,C9112
+DF12_PYLINT = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
+	--from 'pylint==$(PYLINT_VERSION)' --with '$(DF12_PYTHON_LINTS)' pylint \
+	--disable=all --load-plugins=df12_python_lints \
+	--enable=$(DF12_PYLINT_MESSAGES)
+AMBRLEAKS = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
+	--from '$(DF12_PYTHON_LINTS)' ambrleaks
+# Interrogate is a documentation-coverage gate only; the repository is not a
+# Python distribution and needs no project metadata.
+INTERROGATE_VERSION ?= 1.7.0
+INTERROGATE = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
+	--from 'interrogate==$(INTERROGATE_VERSION)' interrogate --fail-under 100
+# Directories that may hold Python: tests, scripts, benchmarks, and the
+# modules that GitHub Actions workflows and local actions run. Only the roots
+# that contain Python today are linted, so a new script or benchmark directory
+# is covered as soon as it exists, and an empty root is not an error. The
+# workflow contract tests require every tracked Python file to sit under one
+# of these roots.
+PYTHON_SOURCE_ROOTS ?= .github/scripts .github/actions scripts tests benches benchmarks
+PYTHON_SOURCES = $(strip $(foreach root,$(PYTHON_SOURCE_ROOTS),$(if $(strip $(shell find $(root) -type f -name '*.py' -not -path '*/__pycache__/*' 2>/dev/null | head -n 1)),$(root))))
 
 # CV-005 CodeScene contracts run from the shared-actions commit pinned here.
 # `.github/cv005.toml` carries this repository's selection parameters.
@@ -158,12 +199,27 @@ coverage: ## Generate lcov coverage with lld for llvm-tools compatibility
 		LDFLAGS="$(COVERAGE_LINKER_FLAGS)" \
 		$(CARGO) llvm-cov --lcov --output-path lcov.info $(TEST_FLAGS)
 
-lint: lint-clippy lint-whitaker ## Run rustdoc, Clippy, and Whitaker with warnings denied
+lint: lint-clippy lint-whitaker lint-python ## Run rustdoc, Clippy, Whitaker, and the Python linters with warnings denied
 
 # Keep Whitaker on the Clippy route's explicit prerequisite edge so `make -j`
 # cannot overlap the two compiler gates.
 lint-whitaker: lint-clippy
 	env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="-D warnings" $(WHITAKER) $(WHITAKER_PACKAGES) -- $(CARGO_FLAGS)
+
+# Python lints run last, after the Rust compiler gates, and need no Rust
+# toolchain. Every command receives the same source roots so Ruff, Pylint, the
+# df12 house lints, ambrleaks, and Interrogate judge one boundary.
+lint-python: ## Run Ruff, Pylint, the df12 house lints, ambrleaks, and Interrogate over the Python sources
+	@if [ -z "$(PYTHON_SOURCES)" ]; then \
+		echo "lint-python: no Python sources under $(PYTHON_SOURCE_ROOTS)"; \
+	else \
+		set -e; \
+		$(RUFF) check $(PYTHON_SOURCES); \
+		$(PYLINT) $(PYTHON_SOURCES); \
+		$(DF12_PYLINT) $(PYTHON_SOURCES); \
+		$(AMBRLEAKS) $(PYTHON_SOURCES); \
+		$(INTERROGATE) $(PYTHON_SOURCES); \
+	fi
 
 lint-clippy: check-build-tools ## Run rustdoc and Clippy with the development flags
 	$(BASE_GATE_RUSTFLAGS) RUSTDOCFLAGS="$(RUSTDOC_FLAGS)" $(CARGO) doc --no-deps
