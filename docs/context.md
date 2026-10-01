@@ -46,6 +46,7 @@ _Table 1: Language and specification terms._
 | Durable data     | Compiler data safe to keep in the query database across edits, such as byte spans, `FileId`, interned symbols, and stable identifiers.                      |
 | Adapter          | Infrastructure-facing implementation of a compiler port, such as the CLI, filesystem source loader, diagnostic renderer, interpreter host, or LLVM backend. |
 | Port             | A narrow interface owned by the compiler domain or application layer and implemented by an adapter.                                                         |
+| ExecutionHost    | The port through which the interpreter performs host effects and records host events, such as `Console` writes.                                             |
 
 _Table 2: Compiler architecture terms._
 

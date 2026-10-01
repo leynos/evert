@@ -40,7 +40,9 @@ _Table 1: Execution strategy options._
 Build a tree-walking Core interpreter before native code generation. Define a
 narrow `Backend` trait in `evert_codegen_api`; keep textual LLVM IR and the
 Inkwell-backed LLVM implementation behind an optional `evert_codegen_llvm`
-adapter.
+adapter. The interpreter is driven through an `ExecutionHost` port, execution
+sits outside the query database, and effect output reaches the host as explicit
+events.
 
 ## Consequences
 
