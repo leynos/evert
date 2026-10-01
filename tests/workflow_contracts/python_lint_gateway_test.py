@@ -185,29 +185,37 @@ def test_every_python_file_sits_under_a_lint_root() -> None:
     )
 
 
-def test_lint_depends_on_the_python_gateway() -> None:
-    """`make lint`, which CI runs, must reach the Python linters."""
+@pytest.mark.parametrize(
+    ("target", "prerequisite"),
+    [
+        pytest.param("all", "typecheck", id="all-requires-typecheck"),
+        pytest.param("lint", "lint-python", id="lint-requires-lint-python"),
+        pytest.param(
+            "typecheck",
+            "typecheck-python",
+            id="typecheck-requires-python-check",
+        ),
+        pytest.param(
+            "typecheck",
+            "typecheck-rust",
+            id="typecheck-requires-rust-check",
+        ),
+    ],
+)
+def test_make_target_requires_gateway_prerequisite(
+    target: str, prerequisite: str
+) -> None:
+    """Each aggregate Make target must retain its gateway prerequisite."""
     declaration = next(
-        (line for line in _makefile_lines() if line.startswith("lint:")),
+        (line for line in _makefile_lines() if line.startswith(f"{target}:")),
         None,
     )
-    assert declaration is not None, "Makefile does not define lint"
-    prerequisites = declaration.removeprefix("lint:").split("##", 1)[0].split()
-    assert "lint-python" in prerequisites, (
-        f"lint must depend on lint-python, found {prerequisites}"
+    assert declaration is not None, f"Makefile does not define {target}"
+    prerequisites = (
+        declaration.removeprefix(f"{target}:").split("##", 1)[0].split()
     )
-
-
-def test_all_includes_the_typecheck_gate() -> None:
-    """The standard aggregate must include the configured typecheck target."""
-    declaration = next(
-        (line for line in _makefile_lines() if line.startswith("all:")),
-        None,
-    )
-    assert declaration is not None, "Makefile does not define all"
-    prerequisites = declaration.removeprefix("all:").split("##", 1)[0].split()
-    assert "typecheck" in prerequisites, (
-        f"all must depend on typecheck, found {prerequisites}"
+    assert prerequisite in prerequisites, (
+        f"{target} must depend on {prerequisite}, found {prerequisites}"
     )
 
 
@@ -300,20 +308,6 @@ def test_df12_lints_are_pinned_to_a_commit() -> None:
     reference = _makefile_variable("DF12_PYTHON_LINTS_REF")
     assert re.fullmatch(r"[0-9a-f]{40}", reference), (
         f"DF12_PYTHON_LINTS_REF must be a full commit hash, found {reference!r}"
-    )
-
-
-@pytest.mark.parametrize("prerequisite", ["typecheck-python", "typecheck-rust"])
-def test_typecheck_reaches_both_type_checks(prerequisite: str) -> None:
-    """`make typecheck`, which CI runs, must run the Python and Rust checks."""
-    declaration = next(
-        (line for line in _makefile_lines() if line.startswith("typecheck:")),
-        None,
-    )
-    assert declaration is not None, "Makefile does not define typecheck"
-    prerequisites = declaration.removeprefix("typecheck:").split("##", 1)[0].split()
-    assert prerequisite in prerequisites, (
-        f"typecheck must depend on {prerequisite}, found {prerequisites}"
     )
 
 
