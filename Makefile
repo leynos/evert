@@ -37,6 +37,11 @@ WHITAKER_PACKAGES ?= --all
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 
+# The Python baseline every uv-driven Python helper pins. The workflow contract
+# tests rely on the deferred annotation evaluation CPython 3.14 introduced, so
+# they run on this baseline rather than on whichever interpreter uv selects.
+PYTHON_BASELINE ?= 3.14
+
 # CV-005 CodeScene contracts run from the shared-actions commit pinned here.
 # `.github/cv005.toml` carries this repository's selection parameters.
 CV005_CONTRACTS_REF ?= a38feb9be25755c30eca5bda96bd3786a5b89c6b
@@ -137,7 +142,7 @@ test: check-build-tools ## Run tests with warnings treated as errors
 
 test-workflow-contracts: ## Validate the shared and local workflow contracts
 	$(CV005_CONTRACTS) check --repository .
-	uv run --with 'pytest>=8' --with 'pyyaml>=6' pytest tests/workflow_contracts -q
+	$(UV_ENV) $(UV) run --no-project --python $(PYTHON_BASELINE) --with 'pytest>=8' --with 'pyyaml>=6' pytest tests/workflow_contracts -q
 
 target/debug/$(TARGET): | check-build-tools ## Build the development binary
 	$(BASE_GATE_RUSTFLAGS) $(CARGO) build $(BUILD_JOBS) --bin $(TARGET)
