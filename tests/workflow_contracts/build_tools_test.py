@@ -16,6 +16,10 @@ from workflow_contract_support import (
     sequence_at,
 )
 
+FUTURE_REUSABLE_WORKFLOW = "/".join(
+    (".", ".github", "workflows", "future-reusable.yml")
+)
+
 
 def _ci_steps(documents: dict[str, Document]) -> list[dict[str, object]]:
     """Return CI's validated build-test steps for named workflow mutations."""
@@ -32,10 +36,23 @@ def test_current_workflows_provision_linker_before_each_linux_suite() -> None:
     assert not violations, "\n".join(violations)
 
 
-def test_duplicate_workflow_keys_are_rejected() -> None:
-    """Workflow loading rejects duplicate mapping keys."""
+@pytest.mark.parametrize(
+    "source",
+    [
+        "jobs:\n  test: {}\n  test: {}\n",
+        (
+            "jobs:\n"
+            "  test:\n"
+            "    steps:\n"
+            "      - uses: checkout\n"
+            "        uses: another-action\n"
+        ),
+    ],
+)
+def test_duplicate_workflow_keys_are_rejected(source: str) -> None:
+    """Workflow loading rejects duplicate keys at every mapping depth."""
     with pytest.raises(WorkflowError, match="duplicate key"):
-        load_workflow("duplicate.yml", "jobs:\n  test: {}\n  test: {}\n")
+        load_workflow("duplicate.yml", source)
 
 
 def test_removing_setup_rust_breaks_coverage_provisioning() -> None:
@@ -173,7 +190,7 @@ def test_new_local_reusable_suite_call_fails_closed() -> None:
         }
     }
     mapping_at(documents, "ci.yml", "jobs")["future-reusable"] = {
-        "uses": "./.github/workflows/future-reusable.yml"
+        "uses": FUTURE_REUSABLE_WORKFLOW
     }
 
     violations = build_tool_violations(documents)

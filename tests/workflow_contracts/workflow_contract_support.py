@@ -23,30 +23,70 @@ class WorkflowError(ValueError):
     """Raised when a workflow cannot be read or has an invalid shape."""
 
 
-class _StrictLoader(yaml.SafeLoader):
-    """Safe YAML loader that rejects repeated mapping keys."""
+def _reject_duplicate_mapping_keys(
+    loader: yaml.SafeLoader,
+    node: object,
+    visited: set[int],
+) -> None:
+    r"""Reject repeated keys before the safe loader folds mappings into dicts.
 
+    Parameters
+    ----------
+    loader
+        The safe loader used to construct YAML mapping keys.
+    node
+        A parsed YAML node to inspect recursively.
+    visited
+        Node identities already checked, preventing loops through aliases.
 
-def _construct_mapping(loader: _StrictLoader, node: yaml.MappingNode) -> Document:
-    """Construct one mapping while refusing ambiguous duplicate keys."""
-    seen: set[object] = set()
-    for key_node, _ in node.value:
-        key = loader.construct_object(key_node, deep=True)
-        if key in seen:
-            message = f"duplicate key {key!r} at {key_node.start_mark}"
-            raise WorkflowError(message)
-        seen.add(key)
-    return typ.cast("Document", loader.construct_mapping(node, deep=True))
+    Raises
+    ------
+    WorkflowError
+        If a mapping repeats a key.
 
+    Examples
+    --------
+    >>> source = "key: first\nkey: second"
+    >>> loader = yaml.SafeLoader(source)
+    >>> node = loader.get_single_node()
+    >>> try:
+    ...     _reject_duplicate_mapping_keys(loader, node, set())
+    ... except WorkflowError as error:
+    ...     "duplicate key" in str(error)
+    True
+    >>> loader.dispose()
+    """
+    node_identity = id(node)
+    if node_identity in visited:
+        return
+    visited.add(node_identity)
 
-_StrictLoader.add_constructor(_StrictLoader.DEFAULT_MAPPING_TAG, _construct_mapping)
+    match node:
+        case yaml.MappingNode(value=pairs):
+            seen: set[object] = set()
+            for key_node, value_node in pairs:
+                key = loader.construct_object(key_node, deep=True)
+                if key in seen:
+                    message = f"duplicate key {key!r} at {key_node.start_mark}"
+                    raise WorkflowError(message)
+                seen.add(key)
+                _reject_duplicate_mapping_keys(loader, key_node, visited)
+                _reject_duplicate_mapping_keys(loader, value_node, visited)
+        case yaml.SequenceNode(value=children):
+            for child_node in children:
+                _reject_duplicate_mapping_keys(loader, child_node, visited)
 
 
 def load_workflow(name: str, text: str) -> Document:
     """Parse one workflow mapping and name syntax errors with its file."""
-    loader = _StrictLoader(text)
+    loader = yaml.SafeLoader(text)
     try:
-        document = loader.get_single_data()
+        node = loader.get_single_node()
+        if node is None:
+            document = None
+        else:
+            _reject_duplicate_mapping_keys(loader, node, set())
+            document = loader.construct_document(node)
     except yaml.YAMLError as error:
         message = f"{name}: not valid YAML: {error}"
         raise WorkflowError(message) from error

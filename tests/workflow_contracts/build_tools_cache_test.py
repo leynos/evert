@@ -3,6 +3,7 @@
 import os
 import re
 import shutil
+import sys
 from pathlib import Path
 
 from command_runner import CommandResult, run_fixed_command
@@ -22,6 +23,7 @@ PROBE_ARGUMENTS = [
 LINKER_MISSING_MESSAGE = (
     "setup-rust must put its verified linker on PATH before Make runs"
 )
+PYTHON_SHEBANG = f"#!{sys.executable}\n"
 
 
 def _run(
@@ -74,8 +76,7 @@ def _install_fake_commands(tmp_path: Path) -> tuple[Path, Path, Path]:
     curl_log = tmp_path / "curl.log"
     _write_executable(
         fake_bin / "rustup",
-        "#!/usr/bin/env python3\n"
-        "import pathlib, sys\n"
+        PYTHON_SHEBANG + "import pathlib, sys\n"
         f"log = pathlib.Path({str(rustup_log)!r})\n"
         "log.open('a').write(' '.join(sys.argv[1:]) + '\\n')\n"
         f"if sys.argv[1:3] == ['run', {PINNED_NIGHTLY!r}]:\n"
@@ -87,8 +88,7 @@ def _install_fake_commands(tmp_path: Path) -> tuple[Path, Path, Path]:
     )
     _write_executable(
         fake_bin / "curl",
-        "#!/usr/bin/env python3\n"
-        "import pathlib, sys\n"
+        PYTHON_SHEBANG + "import pathlib, sys\n"
         f"pathlib.Path({str(curl_log)!r}).write_text('invoked\\n')\n"
         "raise SystemExit(91)\n",
     )

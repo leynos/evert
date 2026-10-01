@@ -52,17 +52,21 @@ on.
 ## Python lint gateway
 
 `make lint` runs the Rust gates first and the Python gates after them, with
-warnings denied. `make lint-python` runs the Python gates on their own. In
-order, it runs:
+warnings denied. `make lint-python` runs the Python gates on their own, and
+`make all` includes `make typecheck`. The same discovered Python file inventory
+feeds Ruff, Pylint with the df12 plugin, ambrleaks, Interrogate, and ty; the
+typecheck gateway runs ty over that inventory. In order, the lint gateway runs:
 
 - Ruff (`ruff check`), pinned by `RUFF_VERSION` (0.16.4).
-- Pylint, pinned by `PYLINT_VERSION` (4.0.9), with the selected message set
-  enabled in `pyproject.toml`.
-- The df12 house lints, a Pylint plugin from `leynos/df12-python-lints`, pinned
-  by the commit in `DF12_PYTHON_LINTS_REF` (release `v0.3.0`). `uv` resolves a
-  commit from its cache without the network, so the gate works offline, and a
-  moved tag cannot change what runs. `DF12_PYLINT_MESSAGES` lists the
-  R9101-R9112 and C9102-C9112 messages the target enables.
+- Pylint 4.0.9 and the df12 house lints in one Pylint invocation on a managed
+  CPython 3.14 interpreter. The plugin from `leynos/df12-python-lints` is
+  pinned by the commit in `DF12_PYTHON_LINTS_REF` (release `v0.3.0`). `uv`
+  resolves a commit from its cache without the network, so the gate works
+  offline, and a moved tag cannot change what runs. Pylint's default
+  diagnostics remain enabled; the invocation does not globally disable Pylint
+  messages. `DF12_PYLINT_MESSAGES` enables all 13 message IDs published by the
+  pinned v0.3.0 plugin release; the workflow contract test keeps that list
+  complete when the pinned release changes.
 - `ambrleaks`, from the same df12 package and ref.
 - Interrogate, pinned by `INTERROGATE_VERSION` (1.7.0), with `--fail-under 100`.
   Every module, class, function, nested function, and test needs a docstring.
@@ -76,21 +80,27 @@ never treats the repository as a Python project. It mirrors the Ruff and Pylint
 configuration of `leynos/netsuke`, which itself mirrors `leynos/episodic`; only
 path-shaped settings are local.
 
-All tools run on CPython 3.14 through `uv tool run`. `uv` fetches a managed
-3.14 interpreter, so contributors need `uv` but not a system Python 3.14.
-`make test-workflow-contracts` runs pytest on the same baseline. The baseline
-is set in three places, which must agree: `PYTHON_BASELINE` in the `Makefile`
-(3.14), `target-version` (`py314`) and `py-version` in `pyproject.toml`.
+Repository-owned Python linting, typechecking, and pytest run on managed
+CPython 3.14 through `uv`; `uv` fetches the interpreter, so contributors need
+`uv` but not a system Python 3.14. The separate CV-005 shared contract CLI uses
+its own Python 3.13 pin in the `Makefile`. The Python baseline is
+`PYTHON_BASELINE` in the `Makefile`; CI and audit use literal `3.14`
+`setup-python` inputs, which workflow contract tests check against that
+baseline. The baseline must also agree with Ruff's `target-version` (`py314`)
+and Pylint's `py-version` in `pyproject.toml`.
 
-`PYTHON_SOURCE_ROOTS` in the `Makefile` lists the source roots:
-`.github/scripts`, `.github/actions`, `scripts`, `tests`, `benches`, and
-`benchmarks`. Only roots that contain Python are linted, so a new script,
-benchmark, or workflow-run module is covered as soon as it exists. Today only
-`tests/workflow_contracts/` holds Python.
+The shared discovered inventory covers Python files recursively throughout
+`.github/` (including workflows and actions), `tests/`, `scripts/`,
+`benchmarks/`, and `benches/`. Only files that exist are passed to the tools,
+so new workflow, action, script, and benchmark modules are covered as soon as
+they are added. Today only `tests/workflow_contracts/` holds Python.
 
-Do not silence a Python lint: no `# noqa`, `# pylint: disable`, or
-`# type: ignore`. Fix the code. Two exemptions are configured, both scoped by
-file in `pyproject.toml`:
+Do not silence a Python lint in source: no `# noqa`, `# pylint: disable`, or
+`# type: ignore`. Fix the code. Ruff has two narrowly documented
+`extend-ignore` entries for last-resort conflicts between its docstring rules:
+D211 conflicts with D203, and D212 conflicts with D213. These rule-level
+exceptions are separate from the only two per-file exemptions, both configured
+in `pyproject.toml`:
 
 - Ruff's `assert` rule (`S101`) for files under `tests/`, because pytest relies
   on plain `assert` statements and rewrites them to report the compared values.
@@ -133,8 +143,7 @@ The check covers `PYTHON_SOURCES`, built from the same `PYTHON_SOURCE_ROOTS` as
 the linters, so a Python file cannot be linted yet left untyped. The modules in
 `tests/workflow_contracts/` import their siblings through the directory pytest
 puts on `sys.path`, which ty does not follow. `PYTHON_IMPORT_ROOTS` therefore
-passes whichever of `tests/workflow_contracts`, `scripts`, and
-`.github/scripts` exist as `--extra-search-path` roots.
+passes each existing source root as an `--extra-search-path` root.
 
 Do not silence a type error: no `# type: ignore`, no `# ty: ignore`, and no
 `typing.Any` escape hatches. Workflow YAML loads as loosely typed objects, so

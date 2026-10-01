@@ -11,7 +11,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from workflow_contract_support import fresh_documents, steps
+from workflow_contract_support import fresh_documents, jobs, steps
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = REPOSITORY_ROOT / "Makefile"
@@ -20,12 +20,25 @@ PYPROJECT = REPOSITORY_ROOT / "pyproject.toml"
 # Ruff skips these directories by default. The repository adds its uv caches
 # and Cargo output through `extend-exclude` in pyproject.toml, which this
 # module reads instead of copying so the two cannot disagree.
-DEFAULT_EXCLUDES = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__"})
+DEFAULT_EXCLUDES = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        "vendor",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+    }
+)
 
-GATEWAY_COMMANDS = ("RUFF", "PYLINT", "DF12_PYLINT", "AMBRLEAKS", "INTERROGATE")
+GATEWAY_COMMANDS = ("RUFF", "PYLINT", "AMBRLEAKS", "INTERROGATE")
 PINNED_TOOLS = (
     "RUFF_VERSION",
     "PYLINT_VERSION",
+    "PYTEST_VERSION",
     "INTERROGATE_VERSION",
     "TY_VERSION",
 )
@@ -50,7 +63,13 @@ def _makefile_variable(name: str) -> str:
         The assigned value with surrounding whitespace removed.
     """
     assignment = re.compile(rf"{re.escape(name)}\s*[:?]?=\s*(?P<value>.+?)\s*")
-    for line in _makefile_lines():
+    continued = ""
+    for physical_line in _makefile_lines():
+        line = continued + physical_line.lstrip()
+        if line.endswith("\\"):
+            continued = line[:-1] + " "
+            continue
+        continued = ""
         match = assignment.fullmatch(line)
         if match is not None:
             return match["value"]
@@ -131,6 +150,9 @@ def _python_files() -> list[Path]:
 def test_python_baseline_agrees_across_gateway_files() -> None:
     """The Makefile baseline must equal Ruff's target and Pylint's version."""
     baseline = _makefile_variable("PYTHON_BASELINE")
+    assert baseline == "3.14", (
+        f"Python lint baseline must be CPython 3.14, found {baseline}"
+    )
     major, minor = baseline.split(".")
     ruff_target = _pyproject_setting("tool", "ruff", "target-version")
     pylint_version = _pyproject_setting("tool", "pylint", "main", "py-version")
@@ -147,6 +169,11 @@ def test_python_baseline_agrees_across_gateway_files() -> None:
 def test_every_python_file_sits_under_a_lint_root() -> None:
     """Python outside the Makefile's source roots would escape every linter."""
     roots = _makefile_variable("PYTHON_SOURCE_ROOTS").split()
+    required_roots = {".github", "tests", "scripts", "benches", "benchmarks"}
+    assert required_roots <= set(roots), (
+        "PYTHON_SOURCE_ROOTS must cover workflows/actions, tests, scripts, and "
+        f"benchmarks; missing {sorted(required_roots - set(roots))}"
+    )
     escaped = [
         str(path)
         for path in _python_files()
@@ -171,11 +198,87 @@ def test_lint_depends_on_the_python_gateway() -> None:
     )
 
 
+def test_all_includes_the_typecheck_gate() -> None:
+    """The standard aggregate must include the configured typecheck target."""
+    declaration = next(
+        (line for line in _makefile_lines() if line.startswith("all:")),
+        None,
+    )
+    assert declaration is not None, "Makefile does not define all"
+    prerequisites = declaration.removeprefix("all:").split("##", 1)[0].split()
+    assert "typecheck" in prerequisites, (
+        f"all must depend on typecheck, found {prerequisites}"
+    )
+
+
 @pytest.mark.parametrize("command", GATEWAY_COMMANDS)
 def test_lint_python_recipe_runs_every_gateway_tool(command: str) -> None:
     """Each tool in the gateway must be invoked by the `lint-python` recipe."""
     assert f"$({command})" in _recipe("lint-python"), (
         f"lint-python must run $({command})"
+    )
+
+
+def test_pylint_keeps_defaults_and_adds_df12_messages() -> None:
+    """The house plugin augments Pylint defaults instead of replacing them."""
+    recipe = _makefile_variable("PYLINT")
+    messages = _makefile_variable("DF12_PYLINT_MESSAGES")
+    pylint_config = _pyproject_setting("tool", "pylint", "messages control")
+    assert isinstance(pylint_config, dict), "Pylint message settings must be a mapping"
+    assert "disable" not in pylint_config, (
+        "Pylint defaults must remain active; do not configure a disable list"
+    )
+    pylint_command = re.search(
+        r"(?!.*--disable=all).*pylint.*--load-plugins=df12_python_lints"
+        r".*--enable=\$\(DF12_PYLINT_MESSAGES\)",
+        recipe,
+        re.DOTALL,
+    )
+    assert pylint_command is not None, (
+        "Pylint must retain its defaults, load df12, and enable its messages"
+    )
+    expected_messages = {
+        "R9101",
+        "C9102",
+        "R9103",
+        "R9104",
+        "C9105",
+        "C9106",
+        "C9107",
+        "R9108",
+        "R9109",
+        "R9110",
+        "R9111",
+        "R9112",
+        "C9112",
+    }
+    assert set(messages.split(",")) == expected_messages, (
+        f"DF12 message configuration must be {sorted(expected_messages)}, "
+        f"found {messages!r}"
+    )
+    assert "--managed-python --python $(PYTHON_BASELINE)" in recipe, (
+        "Pylint must run with the managed baseline interpreter"
+    )
+
+
+@pytest.mark.parametrize("workflow", ["ci.yml", "audit.yml"])
+def test_workflow_python_interpreter_matches_the_gateway(workflow: str) -> None:
+    """Workflow-owned Python steps must use the gateway's CPython baseline."""
+    document = fresh_documents()[workflow]
+    workflow_jobs = jobs(workflow, document)
+    assert workflow_jobs, f"{workflow} must define at least one job"
+    baseline = _makefile_variable("PYTHON_BASELINE")
+    setup_python: dict[str, object] | None = None
+    for step in steps(workflow, document):
+        uses = step.get("uses")
+        if isinstance(uses, str) and uses.startswith("actions/setup-python@"):
+            setup_python = step
+            break
+    assert setup_python is not None, f"{workflow} must set up Python explicitly"
+    with_args = setup_python.get("with")
+    assert isinstance(with_args, dict), f"{workflow} Python setup needs inputs"
+    assert with_args.get("python-version") == baseline, (
+        f"{workflow} setup-python must use Makefile baseline {baseline}"
     )
 
 

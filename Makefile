@@ -4,7 +4,7 @@
 	lint-python typecheck-python typecheck-rust
 
 # Keep the composite gates sequential even when a caller uses `make -j`.
-.NOTPARALLEL: all lint
+.NOTPARALLEL: all lint typecheck
 
 SHELL := bash
 
@@ -38,9 +38,9 @@ WHITAKER_PACKAGES ?= --all
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 
-# The Python baseline every uv-driven Python helper pins. Bump it together with
-# `target-version` and `py-version` in pyproject.toml; the workflow contract
-# tests hold the three in sync.
+# The Python baseline for lint, typecheck, and workflow tests. Bump it together
+# with `target-version` and `py-version` in pyproject.toml; contract tests keep
+# the settings in sync.
 PYTHON_BASELINE ?= 3.14
 
 # The Python lint gateway mirrors leynos/netsuke. Each tool is pinned so `make`
@@ -48,13 +48,14 @@ PYTHON_BASELINE ?= 3.14
 # unpinned install fails the gate without any code change. Bump deliberately
 # and fix new findings in the same commit.
 RUFF_VERSION ?= 0.16.4
-RUFF = $(UV_ENV) $(UV) tool run --from ruff==$(RUFF_VERSION) ruff
-# Pylint must run on the baseline so it parses every owned source; the
-# `--load-plugins=` argument clears configured plugins so this pass runs
-# exactly the messages pyproject.toml enables.
+RUFF = $(UV_ENV) $(UV) tool run --managed-python \
+	--python $(PYTHON_BASELINE) \
+	--from ruff==$(RUFF_VERSION) ruff
 PYLINT_VERSION ?= 4.0.9
-PYLINT = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
-	--from 'pylint==$(PYLINT_VERSION)' pylint --load-plugins=
+# Pylint's default messages remain enabled. The same invocation loads the
+# df12 plugin and enables every message published by the pinned release.
+PYTEST_VERSION ?= 9.0.2
+PYTHON_DEPENDENCIES = --with pytest==$(PYTEST_VERSION) --with 'pyyaml>=6'
 # The df12 house lints need CPython 3.14: they parse syntax older runtimes
 # cannot, and the baseline-gated messages (R9112, C9112) key off the
 # `py-version` in pyproject.toml. They run through `uv tool run` so the
@@ -66,17 +67,18 @@ PYLINT = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
 # runs. This is the commit of the v0.3.0 release.
 DF12_PYTHON_LINTS_REF ?= 4cf41736cce2f7ba2778882a5c629c044568a0e5
 DF12_PYTHON_LINTS = git+https://github.com/leynos/df12-python-lints.git@$(DF12_PYTHON_LINTS_REF)
+# Keep this list aligned with every message in the pinned v0.3.0 plugin.
 DF12_PYLINT_MESSAGES = R9101,C9102,R9103,R9104,C9105,C9106,C9107,R9108,R9109,R9110,R9111,R9112,C9112
-DF12_PYLINT = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
-	--from 'pylint==$(PYLINT_VERSION)' --with '$(DF12_PYTHON_LINTS)' pylint \
-	--disable=all --load-plugins=df12_python_lints \
+PYLINT = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
+	--from 'pylint==$(PYLINT_VERSION)' --with '$(DF12_PYTHON_LINTS)' \
+	$(PYTHON_DEPENDENCIES) pylint --load-plugins=df12_python_lints \
 	--enable=$(DF12_PYLINT_MESSAGES)
-AMBRLEAKS = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
+AMBRLEAKS = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
 	--from '$(DF12_PYTHON_LINTS)' ambrleaks
 # Interrogate is a documentation-coverage gate only; the repository is not a
 # Python distribution and needs no project metadata.
 INTERROGATE_VERSION ?= 1.7.0
-INTERROGATE = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
+INTERROGATE = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
 	--from 'interrogate==$(INTERROGATE_VERSION)' interrogate --fail-under 100
 # Pin ty so `make` and CI invoke the same typechecker release. ty is pre-1.0
 # and its diagnostics shift between releases, so an unpinned install can fail
@@ -87,19 +89,24 @@ TY_VERSION ?= 0.0.74
 # the packages the Python sources import are installed beside it. pytest is
 # pinned to keep ty's view of its types stable; PyYAML is a floor, as in
 # `test-workflow-contracts`.
-TY_DEPENDENCIES = --with pytest==9.0.2 --with 'pyyaml>=6'
-# The contract tests import their sibling modules through the directory pytest
-# puts on `sys.path`, which ty does not follow, so those directories are named
-# as search roots. Only directories that exist are passed.
-PYTHON_IMPORT_ROOTS = $(addprefix --extra-search-path ,$(wildcard tests/workflow_contracts scripts .github/scripts))
-# Directories that may hold Python: tests, scripts, benchmarks, and the
-# modules that GitHub Actions workflows and local actions run. Only the roots
-# that contain Python today are linted, so a new script or benchmark directory
-# is covered as soon as it exists, and an empty root is not an error. The
-# workflow contract tests require every tracked Python file to sit under one
-# of these roots.
-PYTHON_SOURCE_ROOTS ?= .github/scripts .github/actions scripts tests benches benchmarks
-PYTHON_SOURCES = $(strip $(foreach root,$(PYTHON_SOURCE_ROOTS),$(if $(strip $(shell find $(root) -type f -name '*.py' -not -path '*/__pycache__/*' 2>/dev/null | head -n 1)),$(root))))
+TY_DEPENDENCIES = $(PYTHON_DEPENDENCIES)
+# Pass all repository-owned Python sources to each gateway. `.github` includes
+# workflow and action modules; the remaining roots cover all tests, scripts,
+# and both common benchmark directory names. Cache, vendor, and build trees
+# are pruned before files reach any tool.
+PYTHON_SOURCE_ROOTS ?= .github tests scripts benches benchmarks
+PYTHON_EXISTING_SOURCE_ROOTS = $(wildcard $(PYTHON_SOURCE_ROOTS))
+PYTHON_PRUNED_DIRECTORIES = \
+	-name .git -prune -o -name .venv -prune -o -name venv -prune -o \
+	-name .uv-cache -prune -o -name .uv-tools -prune -o \
+	-name target -prune -o -name vendor -prune -o -name node_modules -prune -o \
+	-name __pycache__ -prune -o -name .pytest_cache -prune -o \
+	-name .mypy_cache -prune -o -name .ruff_cache -prune -o
+PYTHON_SOURCES = $(strip $(shell find $(PYTHON_EXISTING_SOURCE_ROOTS) \
+	$(PYTHON_PRUNED_DIRECTORIES) -type f -name '*.py' -print | sort))
+# Workflow contract tests import sibling modules as top-level modules, while ty
+# otherwise follows package imports only. Add every existing source root.
+PYTHON_IMPORT_ROOTS = $(addprefix --extra-search-path ,$(wildcard $(PYTHON_SOURCE_ROOTS)))
 
 # CV-005 CodeScene contracts run from the shared-actions commit pinned here.
 # `.github/cv005.toml` carries this repository's selection parameters.
@@ -113,7 +120,8 @@ CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --python 3.13 \
 # every run and fails whenever GitHub is unreachable), and a moved tag cannot
 # change what runs. This is the commit of the v0.1.3 release.
 TYPOS_CONFIG_BUILDER_REF ?= c8a4f95d7cf7f6a1b7517f2775d122d47d5721eb
-TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --python 3.14 --from \
+TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --managed-python \
+	--python $(PYTHON_BASELINE) --from \
 	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_REF)" \
 	typos-config-builder
 
@@ -195,7 +203,7 @@ COVERAGE_ENV = env -u CARGO_ENCODED_RUSTFLAGS
 build: target/debug/$(TARGET) ## Build debug binary
 release: target/release/$(TARGET) ## Build release binary
 
-all: check-fmt lint test spelling test-workflow-contracts ## Perform a comprehensive check of code
+all: check-fmt lint typecheck test spelling test-workflow-contracts ## Perform a comprehensive check of code
 
 clean: ## Remove build artefacts
 	$(CARGO) clean
@@ -206,7 +214,8 @@ test: check-build-tools ## Run tests with warnings treated as errors
 
 test-workflow-contracts: ## Validate the shared and local workflow contracts
 	$(CV005_CONTRACTS) check --repository .
-	$(UV_ENV) $(UV) run --no-project --python $(PYTHON_BASELINE) --with 'pytest>=8' --with 'pyyaml>=6' pytest tests/workflow_contracts -q
+	$(UV_ENV) $(UV) run --no-project --managed-python --python $(PYTHON_BASELINE) \
+		$(PYTHON_DEPENDENCIES) pytest tests/workflow_contracts -q
 
 target/debug/$(TARGET): | check-build-tools ## Build the development binary
 	$(BASE_GATE_RUSTFLAGS) $(CARGO) build $(BUILD_JOBS) --bin $(TARGET)
@@ -239,7 +248,6 @@ lint-python: ## Run Ruff, Pylint, the df12 house lints, ambrleaks, and Interroga
 		set -e; \
 		$(RUFF) check $(PYTHON_SOURCES); \
 		$(PYLINT) $(PYTHON_SOURCES); \
-		$(DF12_PYLINT) $(PYTHON_SOURCES); \
 		$(AMBRLEAKS) $(PYTHON_SOURCES); \
 		$(INTERROGATE) $(PYTHON_SOURCES); \
 	fi
@@ -262,7 +270,7 @@ typecheck-python: ## Typecheck the Python sources with ty
 	@if [ -z "$(PYTHON_SOURCES)" ]; then \
 		echo "typecheck-python: no Python sources under $(PYTHON_SOURCE_ROOTS)"; \
 	else \
-		$(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
+		$(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
 			--from ty==$(TY_VERSION) $(TY_DEPENDENCIES) \
 			ty check --python-version $(PYTHON_BASELINE) \
 			$(PYTHON_IMPORT_ROOTS) $(PYTHON_SOURCES); \

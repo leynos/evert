@@ -21,6 +21,10 @@ extend-exclude = [
     ".uv-cache",
     ".uv-tools",
     "target",
+    "vendor",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
 ]
 
 [tool.ruff.lint]
@@ -41,7 +45,7 @@ select = [
     "TD",       # Be diligent with TODO comments
     "A",        # detect shadowed builtins
     "BLE",      # disallow catch-all exceptions
-    "S",        # disallow things like "exec"; also restricts "assert" but I just NOQA it when I really need it
+    "S",        # Security-oriented rules; tests keep pytest assertions via a scoped exception below.
     "DTZ",      # require strict timezone manipulation with datetime
     "FBT",      # detect boolean traps
     "N",        # enforce naming conventions, e.g. ClassName vs function_name
@@ -201,10 +205,7 @@ max-statements = 70
 max-positional-arguments = 4
 
 [tool.pylint."messages control"]
-# Keep this Pylint pass focused on the explicitly selected messages.
-disable = [
-    "all",
-]
+# Pylint's default diagnostics remain enabled; add the selected house messages.
 enable = [
     # Catch invalid %-style specifiers before log calls reach production.
     "logging-unsupported-format",

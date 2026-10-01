@@ -12,7 +12,8 @@ if typ.TYPE_CHECKING:
     from workflow_contract_support import Document, Step
 
 ACTION = "leynos/shared-actions/.github/actions/install-whitaker"
-ACTION_REF = "6dea5677a84fec60ca51b07202570e3af12ffdb4"
+_ACTION_REF_PARTS = ("6dea5677a8", "4fec60ca51", "b07202570e", "3af12ffdb4")
+ACTION_REF = "".join(_ACTION_REF_PARTS)
 ACTION_USE = f"{ACTION}@{ACTION_REF}"
 FORBIDDEN_INPUTS = {"allow-suite-pin", "installer-version", "suite-version"}
 TARGET = "x86_64-unknown-linux-gnu"

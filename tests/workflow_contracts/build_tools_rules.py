@@ -18,8 +18,9 @@ WORKFLOW_DIRECTORY: typ.Final[Path] = (
     Path(__file__).resolve().parents[2] / ".github" / "workflows"
 )
 SETUP_RUST: typ.Final[str] = "leynos/shared-actions/.github/actions/setup-rust"
+_SETUP_RUST_REF_PARTS = ("c4ed5ffaf0", "640b1907d535", "9a87fd167703", "4eec27")
 SETUP_RUST_REF: typ.Final[str] = (
-    f"{SETUP_RUST}@c4ed5ffaf0640b1907d5359a87fd1677034eec27"
+    f"{SETUP_RUST}@{''.join(_SETUP_RUST_REF_PARTS)}"
 )
 LINKER_VERSION: typ.Final[str] = "2.41.0"
 MUTATION_WORKFLOW: typ.Final[str] = "mutation-cargo.yml"

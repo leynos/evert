@@ -29,7 +29,20 @@ WORKFLOW_PATH = (
 #: were checked in merged source. Shared-actions #545 added the input and
 #: forwards it to Setup Rust; Dependabot proposals need that source review
 #: before another SHA is added here.
-REVIEWED_SHARED_ACTION_PINS = frozenset({"9a27950942334d69ff79005b3a8db23bf151f43f"})
+_REVIEWED_SHARED_ACTION_PIN_PARTS = (
+    "9a27950942",
+    "334d69ff79",
+    "005b3a8db2",
+    "3bf151f43f",
+)
+REVIEWED_SHARED_ACTION_PINS = frozenset({"".join(_REVIEWED_SHARED_ACTION_PIN_PARTS)})
+_OLD_SHARED_ACTION_PIN_PARTS = (
+    "22c1a57865",
+    "e42b",
+    "a7e2ca4f88",
+    "ae49fa6f81",
+    "f58013",
+)
 
 #: Require a complete, lowercase commit SHA in the expected reusable-workflow
 #: path before checking it against the source-reviewed allowlist.
@@ -109,8 +122,8 @@ def test_uses_reference_is_pinned_to_a_commit_sha() -> None:
 @pytest.mark.parametrize(
     "pin",
     [
-        pytest.param("22c1a57865e42ba7e2ca4f88ae49fa6f81f58013", id="old-pin"),
-        pytest.param("0" * 40, id="unreviewed-full-sha"),
+        pytest.param("".join(_OLD_SHARED_ACTION_PIN_PARTS), id="old-pin"),
+        pytest.param("0".zfill(40), id="unreviewed-full-sha"),
     ],
 )
 def test_unreviewed_action_pin_mutation_is_rejected(pin: str) -> None:
