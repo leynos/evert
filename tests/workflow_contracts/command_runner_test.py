@@ -55,7 +55,7 @@ def test_runs_in_the_requested_directory(tmp_path: Path) -> None:
     )
 
 
-def test_resolves_the_executable_on_the_childs_path(tmp_path: Path) -> None:
+def test_resolves_the_executable_on_the_child_process_path(tmp_path: Path) -> None:
     """A tool directory prepended to the child's PATH takes effect."""
     tool = tmp_path / "pinned-tool"
     tool.write_text("#!/bin/sh\necho pinned\n", encoding="utf-8")
