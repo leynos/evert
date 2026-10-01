@@ -21,7 +21,7 @@ WORKFLOW_DIRECTORY: typ.Final[Path] = (
 )
 SETUP_RUST: typ.Final[str] = "leynos/shared-actions/.github/actions/setup-rust"
 SETUP_RUST_REF: typ.Final[str] = (
-    f"{SETUP_RUST}@6cec89bac47a21cf756d68d638a9a510998e57f8"
+    f"{SETUP_RUST}@c4ed5ffaf0640b1907d5359a87fd1677034eec27"
 )
 LINKER_VERSION: typ.Final[str] = "2.41.0"
 MUTATION_WORKFLOW: typ.Final[str] = "mutation-cargo.yml"
