@@ -59,7 +59,9 @@ order, it runs:
 - Pylint, pinned by `PYLINT_VERSION` (4.0.9), with the selected message set
   enabled in `pyproject.toml`.
 - The df12 house lints, a Pylint plugin from `leynos/df12-python-lints`, pinned
-  by `DF12_PYTHON_LINTS_REF` (tag `v0.3.0`). `DF12_PYLINT_MESSAGES` lists the
+  by the commit in `DF12_PYTHON_LINTS_REF` (release `v0.3.0`). `uv` resolves a
+  commit from its cache without the network, so the gate works offline, and a
+  moved tag cannot change what runs. `DF12_PYLINT_MESSAGES` lists the
   R9101-R9112 and C9102-C9112 messages the target enables.
 - `ambrleaks`, from the same df12 package and ref.
 - Interrogate, pinned by `INTERROGATE_VERSION` (1.7.0), with `--fail-under 100`.

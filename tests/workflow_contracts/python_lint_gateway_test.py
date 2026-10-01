@@ -182,9 +182,13 @@ def test_gateway_tool_versions_are_exact(variable: str) -> None:
     )
 
 
-def test_df12_lints_are_pinned_to_a_release_tag() -> None:
-    """The df12 house lints must come from a tag, never a moving branch."""
+def test_df12_lints_are_pinned_to_a_commit() -> None:
+    """The df12 house lints must come from a commit, never a tag or branch.
+
+    A commit resolves from uv's cache without the network, so the gate keeps
+    working offline, and nothing that moves a tag can change what runs.
+    """
     reference = _makefile_variable("DF12_PYTHON_LINTS_REF")
-    assert re.fullmatch(r"v\d+\.\d+\.\d+", reference), (
-        f"DF12_PYTHON_LINTS_REF must be a release tag, found {reference!r}"
+    assert re.fullmatch(r"[0-9a-f]{40}", reference), (
+        f"DF12_PYTHON_LINTS_REF must be a full commit hash, found {reference!r}"
     )

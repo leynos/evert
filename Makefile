@@ -60,7 +60,11 @@ PYLINT = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
 # `py-version` in pyproject.toml. They run through `uv tool run` so the
 # repository never needs a project virtual environment for a Rust
 # contributor's sake.
-DF12_PYTHON_LINTS_REF ?= v0.3.0
+# Pin the commit, not the tag: uv resolves a commit from its cache without the
+# network, so the gate keeps working offline (a tag forces a fetch on every run
+# and fails whenever GitHub is unreachable), and a moved tag cannot change what
+# runs. This is the commit of the v0.3.0 release.
+DF12_PYTHON_LINTS_REF ?= 4cf41736cce2f7ba2778882a5c629c044568a0e5
 DF12_PYTHON_LINTS = git+https://github.com/leynos/df12-python-lints.git@$(DF12_PYTHON_LINTS_REF)
 DF12_PYLINT_MESSAGES = R9101,C9102,R9103,R9104,C9105,C9106,C9107,R9108,R9109,R9110,R9111,R9112,C9112
 DF12_PYLINT = $(UV_ENV) $(UV) tool run --python $(PYTHON_BASELINE) \
