@@ -52,7 +52,7 @@ USES_RE = re.compile(
 
 #: The exact caller configuration: mirror the CI baseline's
 #: --all-features and install the Clang and pinned linker set that
-#: .cargo/config.toml requires on x86_64-unknown-linux-gnu.
+#: .cargo/config.toml requires on supported native Linux targets.
 EXPECTED_WITH = {
     "extra-args": "--all-features",
     "setup-commands": (

@@ -1,21 +1,5 @@
-# Repository-wide Cargo defaults for the development build standard
-# (concordat rule `rust-build-defaults`).
-#
-# On the selected x86_64 GNU/Linux development target, the LLVM backend, the
-# parallel `rustc` frontend and the pinned `mold` linker are the defaults. Cargo
-# auto-discovers this file, so a bare `cargo build` on that target gets the
-# frontend and linker settings while retaining rustc's supported LLVM backend.
-#
-# An assigned `RUSTFLAGS` replaces this target source. The Makefile restates
-# the flags in its `RUSTFLAGS` assignment for the same target, while other
-# targets keep their platform compiler and linker. The backend is left to
-# rustc's LLVM default; no experimental backend flag is configured here.
-# Coverage and release routes assign `RUSTFLAGS` without the development
-# flags. A direct `cargo build --release` keeps them unless overridden.
-# Clang can resolve /usr/bin/ld.mold ahead of PATH. The wrapper verifies the
-# pinned binary and supplies its directory with -B, so a system linker cannot
-# silently replace it. Both linker selection flags live in this exact target
-# rustflags source; other targets keep their platform linker, while a
-# release or coverage RUSTFLAGS assignment clears them together.
-[target.x86_64-unknown-linux-gnu]
+# Repository-wide Cargo defaults for Linux development builds. The generic
+# target selector keeps the standard independent of Linux architecture; the
+# Makefile restates the same flags when a recipe assigns RUSTFLAGS.
+[target.'cfg(target_os = "linux")']
 rustflags = ["-Zthreads=8", "-Clinker=evert-clang-mold", "-Clink-arg=-fuse-ld=mold"]

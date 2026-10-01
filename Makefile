@@ -126,15 +126,15 @@ TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --managed-python \
 	typos-config-builder
 
 # The development build standard (concordat rule `rust-build-defaults`):
-# On an x86_64 GNU/Linux host, parallel rustc and `mold` apply when the
-# effective target is `x86_64-unknown-linux-gnu`; rustc uses its LLVM backend.
+# On a supported GNU/Linux host, parallel rustc and `mold` apply to the
+# matching native x86_64 or aarch64 target; rustc uses its LLVM backend.
 # Route each Cargo command by its effective target. A sole exact native
 # --target takes precedence; commands without it follow CARGO_BUILD_TARGET.
 # Assigned RUSTFLAGS replace Cargo's target table, so each route restates the
 # standard flags. Coverage and release retain their explicit LLVM routes.
 BUILD_HOST_OS := $(shell uname -s)
 BUILD_HOST_ARCH := $(shell uname -m)
-NATIVE_CARGO_TARGET := x86_64-unknown-linux-gnu
+NATIVE_CARGO_TARGET := $(if $(filter x86_64 aarch64,$(BUILD_HOST_ARCH)),$(BUILD_HOST_ARCH)-unknown-linux-gnu,)
 
 # Return the value of the first --target option in a flag list. Unknown forms
 # and empty joined values are sentinels, so they fail the exact-target check.
@@ -166,7 +166,7 @@ endef
 # doctest; CARGO_FLAGS for typecheck; TEST_FLAGS for the test runner. Target
 # selection stops at each command's first literal `--` separator.
 define standard_rustflags_for
-$(if $(and $(filter Linux,$(BUILD_HOST_OS)),$(filter x86_64,$(BUILD_HOST_ARCH)),$(call cargo_effective_target_supported,$1)),-Zthreads=8 -Clinker=evert-clang-mold -Clink-arg=-fuse-ld=mold)
+$(if $(and $(filter Linux,$(BUILD_HOST_OS)),$(filter x86_64 aarch64,$(BUILD_HOST_ARCH)),$(call cargo_effective_target_supported,$1)),-Zthreads=8 -Clinker=evert-clang-mold -Clink-arg=-fuse-ld=mold)
 endef
 
 STANDARD_RUSTFLAGS = $(call standard_rustflags_for,)
@@ -180,24 +180,23 @@ GATE_RUSTFLAGS = $(call gate_rustflags_with,$(CARGO_FLAGS_STANDARD_RUSTFLAGS))
 TEST_GATE_RUSTFLAGS = $(call gate_rustflags_with,$(TEST_FLAGS_STANDARD_RUSTFLAGS))
 BASE_GATE_RUSTFLAGS = $(call gate_rustflags_with,$(STANDARD_RUSTFLAGS))
 CLIPPY_GATE_RUSTFLAGS = $(call gate_rustflags_with,$(CLIPPY_FLAGS_STANDARD_RUSTFLAGS))
-# Only the selected Linux ELF host requires the runner's action-managed linker.
-# Other CI hosts keep their platform toolchain and must parse Make normally.
-ifeq ($(GITHUB_ACTIONS)-$(BUILD_HOST_OS)-$(BUILD_HOST_ARCH),true-Linux-x86_64)
+ifneq ($(filter x86_64 aarch64,$(BUILD_HOST_ARCH)),)
+ifeq ($(GITHUB_ACTIONS)-$(BUILD_HOST_OS),true-Linux)
 BUILD_TOOLS_PREFIX ?= $(shell \
 	linker=$$(command -v ld.mold 2>/dev/null); \
 	prefix=$${linker%/bin/ld.mold}; \
-	if [[ -n "$$RUNNER_TOOL_CACHE" && "$$linker" == "$$RUNNER_TOOL_CACHE"/mold/*/x86_64/bin/ld.mold ]]; then \
+	if [[ -n "$$RUNNER_TOOL_CACHE" && "$$linker" == "$$RUNNER_TOOL_CACHE"/mold/*/$(BUILD_HOST_ARCH)/bin/ld.mold ]]; then \
 		printf '%s' "$$prefix"; \
 	fi)
 ifeq ($(strip $(BUILD_TOOLS_PREFIX)),)
-$(error GITHUB_ACTIONS=true but setup-rust must put its verified linker on PATH before Make runs)
+$(error GITHUB_ACTIONS=true but setup-rust must put its verified Linux linker on PATH before Make runs)
 endif
-else
+endif
+endif
 BUILD_TOOLS_PREFIX ?= $(HOME)/.local
-endif
 export BUILD_TOOLS_PREFIX
 export PATH := $(BUILD_TOOLS_PREFIX)/bin:$(PATH)
-RELEASE_RUSTFLAGS = env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=""
+RELEASE_RUSTFLAGS = env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="$${RUSTFLAGS:+$$RUSTFLAGS }"
 COVERAGE_ENV = env -u CARGO_ENCODED_RUSTFLAGS
 
 build: target/debug/$(TARGET) ## Build debug binary
@@ -226,7 +225,7 @@ target/release/$(TARGET): ## Build the release binary with stable Rust and LLVM
 coverage: ## Generate lcov coverage with lld for llvm-tools compatibility
 	@echo "coverage linker flags: $(COVERAGE_LINKER_FLAGS)"
 	$(COVERAGE_ENV) CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang \
-		RUSTFLAGS="$(COVERAGE_RUST_FLAGS)" \
+		RUSTFLAGS="$${RUSTFLAGS:+$$RUSTFLAGS }$(COVERAGE_RUST_FLAGS)" \
 		CFLAGS="$(COVERAGE_LINKER_FLAGS)" \
 		LDFLAGS="$(COVERAGE_LINKER_FLAGS)" \
 		$(CARGO) llvm-cov --lcov --output-path lcov.info $(TEST_FLAGS)

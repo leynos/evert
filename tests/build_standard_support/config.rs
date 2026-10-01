@@ -3,6 +3,8 @@
 //! `.cargo/config.toml`. Everything is read as text, so the contract needs no
 //! parser dependency.
 
+use std::{error::Error, fmt};
+
 pub const CONFIG: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/.cargo/config.toml"));
 pub const TOOLCHAIN: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/rust-toolchain.toml"));
@@ -15,6 +17,8 @@ pub const THREADS_FLAG: &str = "-Zthreads=8";
 pub const LINKER_DRIVER_FLAG: &str = "-Clinker=evert-clang-mold";
 /// The linker flag the Linux source adds, normalized to one token.
 pub const LINKER_FLAG: &str = "-Clink-arg=-fuse-ld=mold";
+/// The target table that applies to every Rust target whose operating system is Linux.
+const LINUX_TARGET_TABLE: &str = "target.'cfg(target_os = \"linux\")'";
 
 /// A list of complaints about the repository.
 pub type Problems = Vec<String>;
@@ -25,6 +29,39 @@ pub enum Pin {
     Nightly,
     Stable,
 }
+
+/// Why a toolchain file does not identify one supported channel.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PinError {
+    /// The file has no `channel` assignment.
+    MissingChannel,
+    /// The file has more than one `channel` assignment.
+    MultipleChannels(usize),
+    /// A `channel` assignment is not a quoted TOML string.
+    MalformedChannel,
+    /// The channel string is not a supported Rust release or nightly.
+    UnsupportedChannel(String),
+}
+
+impl fmt::Display for PinError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingChannel => formatter.write_str("rust-toolchain.toml names no channel"),
+            Self::MultipleChannels(count) => write!(
+                formatter,
+                "rust-toolchain.toml names {count} channel assignments"
+            ),
+            Self::MalformedChannel => {
+                formatter.write_str("rust-toolchain.toml channel must be a quoted TOML string")
+            }
+            Self::UnsupportedChannel(channel) => {
+                write!(formatter, "the channel `{channel}` is not supported")
+            }
+        }
+    }
+}
+
+impl Error for PinError {}
 
 impl Pin {
     /// Reads the pin from a `rust-toolchain.toml`.
@@ -40,25 +77,45 @@ impl Pin {
     ///
     /// # Errors
     ///
-    /// Returns the reason when the channel is missing, repeated or unsupported.
-    pub fn read(toolchain: &str) -> Result<Self, String> {
-        let channels: Vec<&str> = toolchain
-            .lines()
-            .map(str::trim)
-            .filter(|line| line.starts_with("channel"))
-            .filter_map(|line| line.split('"').nth(1))
-            .collect();
+    /// Returns the reason when the channel is missing, repeated, malformed or unsupported.
+    pub fn read(toolchain: &str) -> Result<Self, PinError> {
+        let mut channels = Vec::new();
+        for line in toolchain.lines().map(str::trim) {
+            let Some((key, assignment_value)) = line.split_once('=') else {
+                continue;
+            };
+            if key.trim() != "channel" {
+                continue;
+            }
+            let value = assignment_value.trim();
+            let Some(quote) = value
+                .chars()
+                .next()
+                .filter(|quote| matches!(quote, '\'' | '"'))
+            else {
+                return Err(PinError::MalformedChannel);
+            };
+            let Some(after_opening_quote) = value.strip_prefix(quote) else {
+                return Err(PinError::MalformedChannel);
+            };
+            let Some((channel, trailing_text)) = after_opening_quote.split_once(quote) else {
+                return Err(PinError::MalformedChannel);
+            };
+            let comment_suffix = trailing_text.trim();
+            if !comment_suffix.is_empty() && !comment_suffix.starts_with('#') {
+                return Err(PinError::MalformedChannel);
+            }
+            channels.push(channel);
+        }
         match channels.as_slice() {
-            [] => Err("rust-toolchain.toml names no channel".to_owned()),
+            [] => Err(PinError::MissingChannel),
             [channel] => Self::classify(channel),
-            _ => Err(format!(
-                "rust-toolchain.toml names more than one channel: {channels:?}"
-            )),
+            _ => Err(PinError::MultipleChannels(channels.len())),
         }
     }
 
     /// Classifies one channel name.
-    fn classify(channel: &str) -> Result<Self, String> {
+    fn classify(channel: &str) -> Result<Self, PinError> {
         let is_date_component = |part: &str, width: usize| {
             part.len() == width && part.bytes().all(|byte| byte.is_ascii_digit())
         };
@@ -83,9 +140,7 @@ impl Pin {
         } else if is_release || matches!(channel, "stable" | "beta") {
             Ok(Self::Stable)
         } else {
-            Err(format!(
-                "the channel `{channel}` is not one the standard knows"
-            ))
+            Err(PinError::UnsupportedChannel(channel.to_owned()))
         }
     }
 
@@ -165,15 +220,20 @@ struct Source {
 }
 
 impl Source {
-    /// Returns whether this is the target whose development route was selected.
-    fn is_development_target(&self) -> bool { self.table == "target.x86_64-unknown-linux-gnu" }
+    /// Returns whether this is the canonical Cargo cfg table for Linux targets.
+    fn is_linux(&self) -> bool { self.table == LINUX_TARGET_TABLE }
+
+    /// Returns whether this source applies to a target triple with Linux as its OS.
+    pub fn applies_to_target(&self, target: &str) -> bool {
+        self.is_linux() && target.split('-').any(|component| component == "linux")
+    }
 
     /// Returns a flag mismatch: supported development settings belong on the
     /// selected target alone when its toolchain is nightly.
     fn problem(&self, pin: Pin) -> Option<String> {
         let reason = self
             .flags
-            .meets(pin.takes_threads() && self.is_development_target())
+            .meets(pin.takes_threads() && self.is_linux())
             .err()?;
         Some(format!("[{}] {reason}", self.table))
     }
@@ -256,8 +316,23 @@ fn sources(config: &str) -> Result<Vec<Source>, String> {
     Ok(found)
 }
 
-/// Returns complaints about source scope: the supported target alone may
-/// inherit nightly development flags from Cargo defaults.
+/// Checks whether one config file's target sources include the supplied Linux
+/// target triple.
+///
+/// This is a contract query for the architecture-independent cfg table, not a
+/// reimplementation of Cargo's complete target matching rules.
+///
+/// # Errors
+///
+/// Returns the reason when the config contains an unreadable `rustflags` array.
+pub fn applies_to_target(config: &str, target: &str) -> Result<bool, String> {
+    Ok(sources(config)?
+        .iter()
+        .any(|source| source.applies_to_target(target)))
+}
+
+/// Returns complaints about source scope: one Linux cfg source carries the
+/// development flags, without an architecture-specific substitute.
 fn shape_problems(found: &[Source], pin: Pin) -> Problems {
     let checks = [
         (
@@ -265,12 +340,12 @@ fn shape_problems(found: &[Source], pin: Pin) -> Problems {
             "no rustflags source",
         ),
         (
-            pin.takes_threads() && !found.iter().any(Source::is_development_target),
-            "no x86_64 GNU/Linux target table carries rustflags",
+            !found.iter().any(Source::is_linux),
+            "no cfg(target_os = \"linux\") table carries rustflags",
         ),
         (
-            found.iter().any(|source| !source.is_development_target()),
-            "another target or [build] carries rustflags",
+            found.iter().any(|source| !source.is_linux()),
+            "another target or [build] table carries rustflags",
         ),
         (found.len() > 1, "more than one rustflags source"),
     ];
@@ -284,7 +359,8 @@ fn shape_problems(found: &[Source], pin: Pin) -> Problems {
 /// Returns every complaint about the configuration sources.
 ///
 /// ```text
-/// config_problems(CONFIG, Pin::read(TOOLCHAIN)) == Ok(vec![])   // a compliant repository
+/// Pin::read(TOOLCHAIN) -> Ok(Pin::Nightly)
+/// config_problems(CONFIG, Pin::Nightly) -> Ok(vec![])
 /// ```
 ///
 /// # Errors

@@ -390,11 +390,11 @@ collaboration.
 
 ## Fast development builds
 
-The selected development standard applies to `x86_64-unknown-linux-gnu`: the
-pinned nightly enables the parallel `rustc` frontend and pinned `mold` linker.
-Rustc uses its LLVM backend on all targets. Cargo discovers the target-specific
-defaults from `.cargo/config.toml`, including for bare development commands. On
-the selected target, Cargo selects the installed `evert-clang-mold` wrapper.
+The selected development standard applies to native Linux x86_64 and aarch64
+targets: the pinned nightly enables the parallel `rustc` frontend and pinned
+`mold` linker. Rustc uses its LLVM backend on all targets. Cargo discovers the
+Linux cfg defaults from `.cargo/config.toml`, including for bare development
+commands. Cargo selects the installed `evert-clang-mold` wrapper on Linux.
 Install the pinned nightly, linker, and wrapper with
 `make install-build-tools`. Make adds `$BUILD_TOOLS_PREFIX/bin` to `PATH`; bare
 Cargo commands need that directory on `PATH` too. The wrapper checks the pinned
@@ -403,23 +403,21 @@ precedence. Standard Make build, test, lint, and typecheck targets run
 `make check-build-tools` before compiling and report an actionable installation
 hint when a prerequisite is missing.
 
-Cargo keys these defaults by target triple, including an explicit cross build to
-`x86_64-unknown-linux-gnu` from another host. That cross-host development
-route is unsupported; use the stable Cross release workflow for supported
-cross-platform packaging. Make's explicit-target development routes clear the
-host defaults, and direct cross builds need an explicitly verified compiler and
-linker route.
+Cargo keys these defaults by target OS, including direct cross builds to Linux
+from another host. That cross-host development route is unsupported; use the
+stable Cross release workflow for supported cross-platform packaging. Make's
+explicit-target development routes clear the host defaults, and direct cross
+builds need an explicitly verified compiler and linker route.
 
 ## Development build routing
 
 The standard Make targets retain the development flags when their recipes assign
-`RUSTFLAGS`; the parallel frontend and pinned linker route is for
-`x86_64-unknown-linux-gnu`. Rustc uses LLVM on all targets. Other Linux targets
-use their platform linker, and non-Linux targets retain their platform linker.
-Coverage and stable release and packaging routes explicitly clear the
-development flags. Verification uses its documented toolchain, and Whitaker
-uses its own installer-managed toolchain. Installed build tools need not be
-active in every job.
+`RUSTFLAGS`; the parallel frontend and pinned linker route applies to native
+Linux x86_64 and aarch64 hosts. Rustc uses LLVM on all targets. Other platforms
+retain their platform linker. Coverage and stable release and packaging routes
+preserve caller flags but omit the development flags. Verification uses its
+documented toolchain, and Whitaker uses its own installer-managed toolchain.
+Installed build tools need not be active in every job.
 
 On the selected target, a direct `cargo build --release` still discovers the
 development defaults. Use `make release` for the configured stable release

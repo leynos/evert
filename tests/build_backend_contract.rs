@@ -36,8 +36,10 @@ const RELEASE_TARGETS: [&str; 6] = [
     "aarch64-apple-darwin",
     "x86_64-unknown-freebsd",
 ];
-/// Supported development flags scoped to the selected `x86_64` Linux target.
+/// Supported development flags scoped to the generic Linux cfg source.
 const DEVELOPMENT_FLAGS: [&str; 3] = ["-Zthreads=8", "fuse-ld=mold", "-Clinker=evert-clang-mold"];
+/// The Cargo cfg table that applies to every Linux target architecture.
+const DEVELOPMENT_TABLE: &str = "target.'cfg(target_os = \"linux\")'";
 
 /// Cranelift must remain out of Cargo's defaults and the pinned toolchain until
 /// the unwind probes pass under a reviewed component and toolchain.
@@ -75,7 +77,8 @@ fn stable_release_is_isolated(route: &str) -> bool {
         return false;
     };
 
-    let has_empty_rustflags = command.contains("RUSTFLAGS=\"\"")
+    let replaces_rustflags = command.contains("RUSTFLAGS=\"\"")
+        || command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }\"")
         || route.lines().any(|line| line.trim() == "RUSTFLAGS: \"\"");
     let clears_encoded_rustflags = command.contains("env -u CARGO_ENCODED_RUSTFLAGS")
         && !route.contains("CARGO_ENCODED_RUSTFLAGS=")
@@ -91,7 +94,7 @@ fn stable_release_is_isolated(route: &str) -> bool {
     .into_iter()
     .all(|flag| !command.contains(flag));
 
-    has_empty_rustflags
+    replaces_rustflags
         && clears_encoded_rustflags
         && has_stable_release_command
         && carries_no_development_flags
@@ -158,22 +161,21 @@ fn release_dry_run() -> io::Result<std::process::Output> {
         .output()
 }
 
-/// The exact supported Linux host table selects all development flags and no
-/// other rustflags table carries any of them.
+/// The generic Linux cfg source selects all development flags and no other
+/// rustflags table carries any of them.
 #[test]
-fn development_flags_are_scoped_to_selected_x86_64_linux_target() {
-    let expected_target = "target.x86_64-unknown-linux-gnu";
+fn development_flags_are_scoped_to_every_linux_target() {
     assert!(
-        rustflags_include(CARGO_CONFIG, expected_target, &DEVELOPMENT_FLAGS,),
-        "the x86_64 Linux target rustflags must select the required development flags"
+        rustflags_include(CARGO_CONFIG, DEVELOPMENT_TABLE, &DEVELOPMENT_FLAGS,),
+        "the generic Linux cfg source must select the required development flags"
     );
     for flag in DEVELOPMENT_FLAGS {
         let tables = tables_with_rustflag(CARGO_CONFIG, flag);
         assert_eq!(tables.len(), 1, "unexpected tables for {flag}: {tables:?}");
         assert_eq!(
             tables.first().map(String::as_str),
-            Some(expected_target),
-            "{flag} must appear only in [{expected_target}]"
+            Some(DEVELOPMENT_TABLE),
+            "{flag} must appear only in [{DEVELOPMENT_TABLE}]"
         );
     }
     assert!(
@@ -187,6 +189,11 @@ fn development_flags_are_scoped_to_selected_x86_64_linux_target() {
 #[rstest]
 #[case::clears_both_sources(
     "env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=\"\" cross +stable build --release",
+    true
+)]
+#[case::preserves_caller_flags(
+    "env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }\" cross +stable build \
+     --release",
     true
 )]
 #[case::workflow_environment_and_command(
@@ -231,10 +238,10 @@ fn stable_route_predicate_checks_flag_isolation(#[case] route: &str, #[case] exp
     assert_eq!(stable_release_is_isolated(route), expected, "{route}");
 }
 
-/// The Make release target must substitute `CARGO` and clear configured and
-/// inherited development flags before its stable Cargo invocation.
+/// The Make release target must substitute `CARGO`, preserve caller flags,
+/// override Cargo defaults and add no development flags of its own.
 #[test]
-fn make_release_route_clears_development_flags() {
+fn make_release_route_preserves_caller_flags() {
     let output = release_dry_run().expect("make --dry-run release should run");
     assert!(
         output.status.success(),
@@ -266,7 +273,7 @@ fn make_release_route_clears_development_flags() {
     assert!(
         stable_release_is_isolated(command),
         concat!(
-            "Make release route carries development flags or fails to clear Cargo flag ",
+            "Make release route carries development flags or fails to override Cargo flag ",
             "sources: {}"
         ),
         command

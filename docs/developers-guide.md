@@ -310,32 +310,27 @@ in any job.
 
 ## The build standard
 
-Development, test, lint, and typecheck builds use the parallel `rustc` frontend
-(`-Zthreads=8`) and, on Linux, the `mold` linker (`-Clink-arg=-fuse-ld=mold`).
-These are defaults in `.cargo/config.toml`, which Cargo discovers on its own,
-so a bare `cargo build` gets them. `mold` ships for Linux only, so the linker
-flag lives in a Linux-only table and macOS and Windows keep their platform
-linker. Cargo selects one `rustflags` source rather than merging them, so every
-source repeats the same flags apart from the linker.
+Development, test, lint, and typecheck builds on Linux use the parallel `rustc`
+frontend (`-Zthreads=8`) and the pinned `mold` linker
+(`-Clink-arg=-fuse-ld=mold`). The `cfg(target_os = "linux")` table in
+`.cargo/config.toml` applies the defaults across Linux architectures. macOS and
+Windows keep their platform linker.
 
 An assigned `RUSTFLAGS` replaces the configuration's flags, so the Makefile
 recipes that set it compose the standard's flags onto any inherited value (CI's
-`setup-rust` exports one). Two builds are deliberately excluded: coverage
-assigns `RUSTFLAGS` without the fast flags, because a measurement should not
-depend on them, and the release recipe and workflow keep the platform linker,
-because they assign `RUSTFLAGS` (even an empty value displaces the
-configuration). Cargo has no per-profile `rustflags`, so a direct
-`cargo build --release` takes the configuration's flags unless `RUSTFLAGS` is
-assigned too.
+`setup-rust` exports one). Coverage and release preserve caller-supplied
+`RUSTFLAGS` while omitting the development flags; coverage adds its own `lld`
+route. A direct `cargo build --release` still takes the configuration's flags,
+so use `make release` for the stable route.
 
 On Linux, install `mold` before building: the configuration names it, so a
 build without it fails at link time. CI installs it through `setup-rust`'s
 `install-mold` input. `tests/build_standard_contract.rs` holds the standard. It
 reads the configuration sources, the commands `make -n` prints for each
-development target on a Linux host and a macOS host (each keeping the caller's
-own `RUSTFLAGS`) and for each coverage and release target on a Linux host, and
-the `setup-rust` steps of the CI workflows (each must pass `install-mold`), so
-a flag lost through a recipe or workflow edit fails there.
+development target on Linux x86_64, Linux aarch64, and macOS hosts (each
+keeping the caller's own `RUSTFLAGS`) and for each coverage and release target
+on Linux, and the `setup-rust` steps of the CI workflows (each must pass
+`install-mold`), so a flag lost through a recipe or workflow edit fails there.
 
 ### Backend support
 
@@ -350,26 +345,26 @@ reassessed.
 
 ## Tooling
 
-The LLVM and pinned `mold` development route applies to
-`x86_64-unknown-linux-gnu`; other targets use LLVM and their platform linker.
-Run `make install-build-tools` to provision the pinned nightly and local build
+The LLVM and pinned `mold` development route applies to native Linux x86_64 and
+aarch64 hosts; other targets use LLVM and their platform linker. Run
+`make install-build-tools` to provision the pinned nightly and local build
 tools, including `mold` 2.41.0 and the `evert-clang-mold` wrapper. Standard
 Make targets add the install directory to `PATH` and check prerequisites before
-compiling. Bare Cargo commands on the selected target need the same directory on
-`PATH`. The wrapper source is `scripts/clang-linker.sh`; it checks the pinned
-linker and passes its directory to Clang so the system linker cannot take
-precedence. Coverage uses LLVM and `lld` for compatibility with coverage
+compiling. Bare Cargo commands on a supported Linux target need the same
+directory on `PATH`. The wrapper source is `scripts/clang-linker.sh`; it checks
+the pinned linker and passes its directory to Clang so the system linker cannot
+take precedence. Coverage uses LLVM and `lld` for compatibility with coverage
 tooling. The pinned nightly includes the `llvm-tools-preview` component.
 
 Install `clang`, `lld`, `mold`, `python3`, and `cargo-audit` before running the
 full generated workflow locally on Linux.
 
-On `x86_64-unknown-linux-gnu`, development, test, lint, and typecheck use this
-LLVM and pinned-linker route. Cargo's target table also applies to a direct
-cross build *to* `x86_64-unknown-linux-gnu` from another host. That cross-host
-development route is unsupported: the linker wrapper and pinned `mold`
-installation target the Linux build host. Use the Linux host for development
-builds; the stable Cross release workflow handles explicit release targets.
+On native Linux x86_64 and aarch64, development, test, lint, and typecheck use
+this LLVM and pinned-linker route. Cargo's target table also applies to direct
+cross builds to Linux targets from another host. That cross-host development
+route is unsupported because the linker wrapper and pinned `mold` installation
+target the Linux build host. Use a supported Linux host for development builds;
+the stable Cross release workflow handles explicit release targets.
 
 ### Security audit ignores
 

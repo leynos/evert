@@ -89,8 +89,8 @@ def test_cross_host_unsupported_guidance_cannot_be_removed() -> None:
     """Reject a guide that no longer calls the cross-host route unsupported."""
     guide = " ".join(GUIDE_TEXT.split())
     mutated = guide.replace(
-        "That cross-host development route is unsupported:",
-        "That cross-host development route is supported:",
+        "That cross-host development route is unsupported because",
+        "That cross-host development route is supported because",
         1,
     )
     errors = guide_errors(mutated)

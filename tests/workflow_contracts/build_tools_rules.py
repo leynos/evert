@@ -1,10 +1,10 @@
 """Require pinned linker provisioning before every Linux test-suite workflow path.
 
-The standard development build uses the pinned linker on the proved x86_64 GNU/Linux
-development route. This consumer contract checks direct Make/Cargo suites,
-coverage actions, and the shared mutation workflow before those paths reach
-compilation. It scans all workflows so a new suite job is measured without
-adding its job id to a list.
+The standard development build uses the pinned linker on the supported native
+x86_64 and aarch64 GNU/Linux routes. This consumer contract checks direct
+Make/Cargo suites, coverage actions, and the shared mutation workflow before
+those paths reach compilation. It scans all workflows so a new suite job is
+measured without adding its job id to a list.
 """
 
 import re

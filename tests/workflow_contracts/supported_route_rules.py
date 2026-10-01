@@ -369,15 +369,21 @@ def guide_errors(guide: str) -> list[str]:
     """Require the developers' guide to document the supported-target boundary."""
     text = " ".join(guide.split())
     required = (
-        ("native target", "On `x86_64-unknown-linux-gnu`, development"),
+        (
+            "native Linux architectures",
+            "On native Linux x86_64 and aarch64, development",
+        ),
         (
             "cross-host behaviour",
             (
-                "Cargo's target table also applies to a direct cross build *to* "
-                "`x86_64-unknown-linux-gnu` from another host."
+                "Cargo's target table also applies to direct cross builds to "
+                "Linux targets from another host."
             ),
         ),
-        ("unsupported boundary", "That cross-host development route is unsupported:"),
+        (
+            "unsupported boundary",
+            "That cross-host development route is unsupported because",
+        ),
         ("Cross packaging", "stable Cross release workflow"),
     )
     return [

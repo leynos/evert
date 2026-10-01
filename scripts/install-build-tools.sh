@@ -42,13 +42,15 @@ is_setup_rust_cache_prefix() {
 }
 
 reuse_setup_rust_linker() {
-  local version=$1 archive_name archive_sha checksum_count cache_prefix marker linker path_linker installed
-  archive_name="mold-$version-$(linker_arch)-linux.tar.gz"
+  local version=$1 archive_name archive_sha checksum_count arch cache_prefix marker
+  local linker path_linker installed
+  arch=$(linker_arch) || return 1
+  archive_name="mold-$version-$arch-linux.tar.gz"
   archive_sha=$(awk -v name="$archive_name" '$2 == name { print $1 }' "$LINKER_SHA256SUMS_FILE") || return 1
   checksum_count=$(awk 'NF { count++ } END { print count + 0 }' <<< "$archive_sha") || return 1
   [[ $checksum_count -eq 1 && $archive_sha =~ ^[[:xdigit:]]{64}$ ]] || return 1
 
-  cache_prefix="$RUNNER_TOOL_CACHE/mold/$version-$archive_sha/x86_64"
+  cache_prefix="$RUNNER_TOOL_CACHE/mold/$version-$archive_sha/$arch"
   marker="$cache_prefix.complete"
   linker="$cache_prefix/bin/ld.mold"
   path_linker=$(command -v ld.mold 2>/dev/null) || path_linker=
@@ -65,7 +67,7 @@ install_linker() {
   local linker="$BUILD_TOOLS_PREFIX/bin/ld.mold"
   local installed_pin="$BUILD_TOOLS_PREFIX/share/evert/mold/VERSION"
   if ! is_supported_build_host "$host"; then
-    note "the pinned \`mold\` linker and Clang wrapper require Linux x86_64 GNU; keeping the platform linker on $(build_host_description "$host")"
+    note "the pinned \`mold\` linker and Clang wrapper require Linux x86_64 or aarch64 GNU; keeping the platform linker on $(build_host_description "$host")"
     return 0
   fi
 

@@ -49,7 +49,9 @@ impl Host {
     }
 
     /// Returns whether the host takes the selected development route.
-    const fn takes_development_flags(self) -> bool { matches!(self, Self::LinuxX86) }
+    const fn takes_development_flags(self) -> bool {
+        matches!(self, Self::LinuxX86 | Self::LinuxArm)
+    }
 }
 
 /// What one `make -n` command assigns to `RUSTFLAGS`.
@@ -132,8 +134,8 @@ pub fn commands_from(stdout: &str) -> Result<Vec<Assignment>, String> {
         .collect()
 }
 
-/// Runs `make -n` for a target on a host and reads its commands.
-fn make_commands(target: &str, host: Host) -> Result<Vec<Assignment>, String> {
+/// Runs `make -n` for one target and returns its stdout without parsing it.
+fn run_make_dry_run(target: &str, host: Host) -> Result<String, String> {
     let output = Command::new("make")
         .args([
             "-n",
@@ -143,6 +145,7 @@ fn make_commands(target: &str, host: Host) -> Result<Vec<Assignment>, String> {
             target,
         ])
         .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), ""))
+        .env("GITHUB_ACTIONS", "false")
         .output()
         .map_err(|error| format!("running make: {error}"))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -151,7 +154,16 @@ fn make_commands(target: &str, host: Host) -> Result<Vec<Assignment>, String> {
             "`make -n {target}` failed, so it is not defined: {stderr}"
         ));
     }
-    commands_from(&String::from_utf8_lossy(&output.stdout))
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Obtains output through the injected runner, then parses it at this boundary.
+fn commands_with(
+    target: &str,
+    host: Host,
+    runner: &mut impl FnMut(&str, Host) -> Result<String, String>,
+) -> Result<Vec<Assignment>, String> {
+    commands_from(&runner(target, host)?)
 }
 
 /// Returns the complaint about one development command, if any: an assigned
@@ -185,10 +197,22 @@ fn development_problem(
 ///
 /// Returns the reason when a listed target is not defined or unreadable.
 pub fn development_problems(host: Host, pin: Pin) -> Result<(Problems, usize), String> {
+    development_problems_with(host, pin, &mut run_make_dry_run)
+}
+
+/// Checks development routes using an injected `make -n` output runner.
+///
+/// Keeping process execution behind this narrow seam lets the parser and route
+/// checks run on structured fixtures without launching Make.
+pub fn development_problems_with(
+    host: Host,
+    pin: Pin,
+    runner: &mut impl FnMut(&str, Host) -> Result<String, String>,
+) -> Result<(Problems, usize), String> {
     let mut problems = Vec::new();
     let mut read = 0;
     for target in DEVELOPMENT_TARGETS {
-        let commands = make_commands(target, host)?;
+        let commands = commands_with(target, host, runner)?;
         read += commands
             .iter()
             .filter(|command| **command != Assignment::Unassigned)
@@ -206,11 +230,14 @@ pub fn development_problems(host: Host, pin: Pin) -> Result<(Problems, usize), S
 /// it takes the configuration's flags, or the assignment names a development
 /// flag.
 fn held_out_command_problems(target: &str, assignment: &Assignment) -> Problems {
-    let Assignment::Flags(flags, _) = assignment else {
+    let Assignment::Flags(flags, inherits) = assignment else {
         return vec![format!(
             "`make {target}` runs a command that takes the configuration's flags"
         )];
     };
+    if !inherits {
+        return vec![format!("`make {target}` drops the caller's RUSTFLAGS")];
+    }
     let named = [
         (flags.names_backend(), BACKEND_FLAG),
         (flags.names_threads(), THREADS_FLAG),
@@ -232,10 +259,17 @@ fn held_out_command_problems(target: &str, assignment: &Assignment) -> Problems 
 ///
 /// Returns the reason when a listed target is not defined or unreadable.
 pub fn held_out_problems() -> Result<(Problems, usize), String> {
+    held_out_problems_with(&mut run_make_dry_run)
+}
+
+/// Checks coverage and release routes with an injected `make -n` output runner.
+pub fn held_out_problems_with(
+    runner: &mut impl FnMut(&str, Host) -> Result<String, String>,
+) -> Result<(Problems, usize), String> {
     let mut problems = Vec::new();
     let mut read = 0;
     for target in HELD_OUT_TARGETS {
-        let commands = make_commands(target, Host::LinuxX86)?;
+        let commands = commands_with(target, Host::LinuxX86, runner)?;
         read += commands.len();
         problems.extend(
             commands

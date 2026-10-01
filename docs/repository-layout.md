@@ -98,8 +98,8 @@ compact and omits build output such as `target/`.
 ## Path responsibilities
 
 - `.cargo/config.toml`: Configures Cargo's discovered development defaults for
-  `x86_64-unknown-linux-gnu`: the parallel `rustc` frontend and pinned `mold`
-  linker. Rustc uses its LLVM backend on all targets.
+  Linux targets: the parallel `rustc` frontend and pinned `mold` linker. Rustc
+  uses its LLVM backend on all targets.
 - `.github/dependabot.yml`: Configures automated dependency update checks.
 - `.github/cv005.toml`: Supplies repository-specific parameters to the shared
   CV-005 workflow contracts.

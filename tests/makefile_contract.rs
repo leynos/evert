@@ -65,6 +65,7 @@ fn make_dry_run_with_options(
         ])
         .env("RUSTFLAGS", HOSTILE_RUST_FLAGS)
         .env("CARGO_ENCODED_RUSTFLAGS", "encoded-caller-flags")
+        .env("GITHUB_ACTIONS", "false")
         .current_dir(env!("CARGO_MANIFEST_DIR"));
     for (name, value) in options {
         command.arg(format!("{name}={value}"));
@@ -121,7 +122,8 @@ fn effective_cargo_route(command: &str) -> &str {
 /// Checks that a development command keeps the standard flags for its host.
 fn has_development_route(command: &str, build_host: &str, build_arch: &str) -> bool {
     let required_flags = ["env -u CARGO_ENCODED_RUSTFLAGS", "-D warnings"];
-    let development_is_supported = build_host == "Linux" && build_arch == "x86_64";
+    let development_is_supported =
+        build_host == "Linux" && matches!(build_arch, "x86_64" | "aarch64");
     let effective_route = effective_cargo_route(command);
     let has_guarded_flags = command.contains("bash -c 'make_flags=$1; shift; effective_flags=");
     let rustflags_assignment = if has_guarded_flags {
@@ -142,16 +144,16 @@ fn has_development_route(command: &str, build_host: &str, build_arch: &str) -> b
 #[rstest]
 #[case::linux_x86_64_build("build", 1, "Linux", "x86_64")]
 #[case::darwin_build_excludes_dev_flags("build", 1, "Darwin", "x86_64")]
-#[case::linux_aarch64_build_excludes_dev_flags("build", 1, "Linux", "aarch64")]
+#[case::linux_aarch64_build("build", 1, "Linux", "aarch64")]
 #[case::linux_x86_64_test("test", 2, "Linux", "x86_64")]
 #[case::darwin_test_excludes_dev_flags("test", 2, "Darwin", "x86_64")]
-#[case::linux_aarch64_test_excludes_dev_flags("test", 2, "Linux", "aarch64")]
+#[case::linux_aarch64_test("test", 2, "Linux", "aarch64")]
 #[case::linux_x86_64_lint("lint", 2, "Linux", "x86_64")]
 #[case::darwin_lint_excludes_dev_flags("lint", 2, "Darwin", "x86_64")]
-#[case::linux_aarch64_lint_excludes_dev_flags("lint", 2, "Linux", "aarch64")]
+#[case::linux_aarch64_lint("lint", 2, "Linux", "aarch64")]
 #[case::linux_x86_64_typecheck("typecheck", 1, "Linux", "x86_64")]
 #[case::darwin_typecheck_excludes_dev_flags("typecheck", 1, "Darwin", "x86_64")]
-#[case::linux_aarch64_typecheck_excludes_dev_flags("typecheck", 1, "Linux", "aarch64")]
+#[case::linux_aarch64_typecheck("typecheck", 1, "Linux", "aarch64")]
 fn development_targets_expand_each_cargo_command(
     #[case] target: &str,
     #[case] expected_commands: usize,
@@ -248,6 +250,7 @@ fn whitaker_does_not_inherit_development_flags() {
 #[rstest]
 #[case::linux_x86_64_coverage("coverage", 1, "Linux", "x86_64")]
 #[case::linux_x86_64_release("release", 1, "Linux", "x86_64")]
+#[case::linux_aarch64_release("release", 1, "Linux", "aarch64")]
 #[case::darwin_x86_64_release("release", 1, "Darwin", "x86_64")]
 fn excluded_targets_expand_their_own_cargo_commands(
     #[case] target: &str,
@@ -279,6 +282,10 @@ fn excluded_targets_expand_their_own_cargo_commands(
             "`make --dry-run {target}` must clear encoded flags before applying its route: \
              {command}"
         );
+        assert!(
+            command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }"),
+            "held-out target {target} must preserve caller RUSTFLAGS: {command}"
+        );
         for development_flag in DEVELOPMENT_FLAGS {
             assert!(
                 !command.contains(development_flag),
@@ -293,7 +300,8 @@ fn excluded_targets_expand_their_own_cargo_commands(
             .expect("coverage must expose its Cargo invocation");
         assert!(
             coverage_command.contains("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang")
-                && coverage_command.contains("-fuse-ld=lld"),
+                && coverage_command.contains("-fuse-ld=lld")
+                && coverage_command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }"),
             "coverage must retain its LLVM-compatible linker route: {coverage_command}"
         );
     } else {
@@ -302,8 +310,8 @@ fn excluded_targets_expand_their_own_cargo_commands(
             .expect("release must expose its Cargo invocation");
         assert!(
             release_command.contains("probe-cargo +stable")
-                && release_command.contains("RUSTFLAGS=\"\""),
-            "release must select stable Rust and clear inherited compiler flags: {release_command}"
+                && release_command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }"),
+            "release must select stable Rust and preserve caller compiler flags: {release_command}"
         );
     }
 }

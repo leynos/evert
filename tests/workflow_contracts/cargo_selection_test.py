@@ -16,15 +16,24 @@ REQUIRED_RUSTFLAGS = {
     "-Clinker=evert-clang-mold",
     "-Clink-arg=-fuse-ld=mold",
 }
-LINUX_TARGET = "x86_64-unknown-linux-gnu"
+LINUX_TARGETS = {
+    "amd64": "x86_64-unknown-linux-gnu",
+    "arm64": "aarch64-unknown-linux-gnu",
+    "aarch64": "aarch64-unknown-linux-gnu",
+    "x86_64": "x86_64-unknown-linux-gnu",
+}
+
+
+def _native_linux_target() -> str | None:
+    """Return the target triple covered by this Linux host, if supported."""
+    if platform.system() != "Linux":
+        return None
+    return LINUX_TARGETS.get(platform.machine().lower())
 
 
 def _is_supported_host() -> bool:
     """Return whether this runner must prove the GNU/Linux development route."""
-    return platform.system() == "Linux" and platform.machine().lower() in {
-        "x86_64",
-        "amd64",
-    }
+    return _native_linux_target() is not None
 
 
 def _prerequisite_failure(output: str) -> str:
@@ -146,7 +155,7 @@ def _evert_rustc_command(output: str) -> tuple[list[str], str] | None:
         pytest.param("bare", (), id="bare-cargo"),
         pytest.param(
             "explicit-target",
-            ("--target", LINUX_TARGET),
+            ("--target", _native_linux_target() or "x86_64-unknown-linux-gnu"),
             id="explicit-linux-target",
         ),
     ],
@@ -158,7 +167,8 @@ def test_native_cargo_check_selects_the_linux_development_flags(
     """Bare and explicit-target Cargo checks must pass all defaults to Evert."""
     if not _is_supported_host():
         pytest.skip(
-            "the development target-table contract applies to native Linux x86_64"
+            "the development target-table contract applies to native Linux "
+            "x86_64 and aarch64"
         )
 
     tools_bin = _check_prerequisites()

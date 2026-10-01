@@ -16,7 +16,6 @@ _ACTION_REF_PARTS = ("6dea5677a8", "4fec60ca51", "b07202570e", "3af12ffdb4")
 ACTION_REF = "".join(_ACTION_REF_PARTS)
 ACTION_USE = f"{ACTION}@{ACTION_REF}"
 FORBIDDEN_INPUTS = {"allow-suite-pin", "installer-version", "suite-version"}
-TARGET = "x86_64-unknown-linux-gnu"
 DIRECT_SETUP = re.compile(
     r"\bwhitaker-installer\b|\bcargo-dylint\b|"
     r"\bcargo\s+(?:install|binstall)\b[^\n]*(?:whitaker|dylint)",
@@ -225,10 +224,10 @@ def action_steps(steps_to_check: list[Step]) -> list[Step]:
 
 
 def _development_cranelift_default() -> bool | None:
-    """Read Cranelift selection from the Linux target's committed Cargo flags."""
+    """Read Cranelift selection from the generic Linux cfg source."""
     config_path = Path(__file__).resolve().parents[2] / ".cargo" / "config.toml"
     config = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    target_config = config.get("target", {}).get(TARGET, {})
+    target_config = config.get("target", {}).get('cfg(target_os = "linux")', {})
     rustflags = target_config.get("rustflags")
     if not isinstance(rustflags, list) or not all(
         isinstance(flag, str) for flag in rustflags

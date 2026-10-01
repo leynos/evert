@@ -21,7 +21,7 @@ PROBE_ARGUMENTS = [
     "MDTABLEFIX=probe-mdtablefix",
 ]
 LINKER_MISSING_MESSAGE = (
-    "setup-rust must put its verified linker on PATH before Make runs"
+    "setup-rust must put its verified Linux linker on PATH before Make runs"
 )
 PYTHON_SHEBANG = f"#!{sys.executable}\n"
 

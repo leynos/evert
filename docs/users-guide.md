@@ -44,12 +44,11 @@ The generated `Makefile` exposes these public targets:
 - `make nixie` validates Mermaid diagrams.
 
 Before the first local build, run `make install-build-tools` to install the
-pinned Rust toolchain and linker tools for the `x86_64-unknown-linux-gnu`
-development route. Rustc uses its LLVM backend; the selected target also uses
-the parallel frontend and pinned `mold` linker. Bare Cargo commands on that
-target need `$BUILD_TOOLS_PREFIX/bin` on `PATH`; Make targets add it
-automatically. Other Linux targets use their platform linker, while non-Linux
-targets keep their platform linker. Install clang, python3, and cargo-audit
+pinned Rust toolchain and linker tools for native Linux x86_64 and aarch64
+development routes. Rustc uses its LLVM backend; Linux targets also use the
+parallel frontend and pinned `mold` linker. Bare Cargo commands on Linux need
+`$BUILD_TOOLS_PREFIX/bin` on `PATH`; Make targets add it automatically. Other
+platforms keep their platform linker. Install clang, python3, and cargo-audit
 before running the full generated workflow locally on Linux; coverage also
 requires lld. The Python linters, the Python type check, and workflow contract
 tests use `uv`, which fetches CPython 3.14 on demand. The

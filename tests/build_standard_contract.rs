@@ -1,17 +1,18 @@
 //! Contract tests for the Rust build standard.
 //!
 //! The standard keeps rustc's LLVM backend and makes the parallel rustc
-//! frontend and pinned `mold` wrapper the defaults for `x86_64` GNU/Linux
-//! development builds. Cargo reads the latter settings from .cargo/config.toml,
-//! but an assigned RUSTFLAGS replaces that target source. Make therefore
-//! restates them for the same host, while other hosts and coverage or release
-//! routes keep their own toolchains.
+//! frontend and pinned `mold` wrapper the defaults for Linux development
+//! builds. Cargo reads the latter settings from .cargo/config.toml, but an
+//! assigned RUSTFLAGS replaces that target source. Make therefore restates
+//! them on supported Linux hosts, while coverage and release keep their own
+//! compiler routes.
 //!
 //!
 //! The Makefile clauses run `make -n` and read the commands it would run,
 //! rather than the Makefile's text, so a flag lost through a variable or a
-//! recipe edit fails here. They check `x86_64` GNU/Linux, Linux/aarch64, and
-//! `macOS/x86_64` because the default is scoped to one exact target triple. The
+//! recipe edit fails here. They check Linux `x86_64`, Linux `aarch64`, and
+//! `macOS/x86_64` because the Cargo default is scoped to Linux by operating
+//! system. The
 //! listed targets and workflows are this repository's own: one that stops
 //! being defined fails the contract, so the check cannot quietly stop covering
 //! it. Each CI workflow that sets up Rust passes `install-mold: 'true'`, so
@@ -27,15 +28,19 @@ mod config;
 mod coverage_contract;
 #[path = "build_standard_support/make.rs"]
 mod make;
+#[path = "build_standard_support/properties.rs"]
+mod properties;
 use ci_steps::{linker_install_problems, workflow_problems};
 use config::{
     BACKEND_FLAG,
     CONFIG,
     Flags,
     Pin,
+    PinError,
     Problems,
     THREADS_FLAG,
     TOOLCHAIN,
+    applies_to_target,
     config_problems,
 };
 use make::{
@@ -44,7 +49,9 @@ use make::{
     assigned_rustflags,
     commands_from,
     development_problems,
+    development_problems_with,
     held_out_problems,
+    held_out_problems_with,
     held_out_target_count,
 };
 use rstest::rstest;
@@ -70,6 +77,8 @@ const STABLE_CHANNEL: &str = "[toolchain]\nchannel = \"stable\"\n";
 const BETA: &str = "[toolchain]\nchannel = \"beta\"\n";
 /// A toolchain file that names no channel.
 const NO_CHANNEL: &str = "[toolchain]\ncomponents = [\"clippy\"]\n";
+/// A toolchain file whose channel assignment is not a TOML string.
+const MALFORMED_CHANNEL: &str = "[toolchain]\nchannel = nightly\n";
 /// A toolchain file that names two channels.
 const TWO_CHANNELS: &str = "[toolchain]\nchannel = \"stable\"\nchannel = \"nightly\"\n";
 /// A toolchain file naming a channel the standard does not know.
@@ -79,39 +88,41 @@ const NIGHTLY_FOO: &str = "[toolchain]\nchannel = \"nightly-foo\"\n";
 /// A toolchain file whose nightly date has a short month field.
 const MALFORMED_NIGHTLY_DATE: &str = "[toolchain]\nchannel = \"nightly-2026-5-28\"\n";
 
-/// A compliant nightly configuration: supported development flags on the exact
-/// `x86_64` GNU/Linux target and nowhere else.
+/// A compliant nightly configuration: the supported Linux route is selected by OS.
 const NIGHTLY_OK: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\n",
+    "[target.'cfg(target_os = \"linux\")']\n",
     "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
 /// The same target, with the linker flag spelled as the `-C` pair Cargo accepts.
 const NIGHTLY_SPELLED_APART: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\n",
+    "[target.'cfg(target_os = \"linux\")']\n",
     "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\", \"-C\", \
      \"link-arg=-fuse-ld=mold\"]\n"
 );
 /// A compliant stable configuration with no development flags.
-const STABLE_OK: &str = concat!("[target.x86_64-unknown-linux-gnu]\n", "rustflags = []\n");
+const STABLE_OK: &str = concat!(
+    "[target.'cfg(target_os = \"linux\")']\n",
+    "rustflags = []\n"
+);
 /// The exact target selects the unsupported Cranelift backend.
 const TARGET_SELECTS_CRANELIFT: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\n",
+    "[target.'cfg(target_os = \"linux\")']\n",
     "rustflags = [\"-Zcodegen-backend=cranelift\", \"-Zthreads=8\", ",
     "\"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
 /// The exact target lost the parallel frontend flag.
 const TARGET_LOSES_THREADS: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\n",
+    "[target.'cfg(target_os = \"linux\")']\n",
     "rustflags = [\"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
 /// The exact target lost the `mold` linker argument.
 const TARGET_LOSES_LINKER: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\n",
+    "[target.'cfg(target_os = \"linux\")']\n",
     "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\"]\n"
 );
 /// The exact target lost the pinned linker wrapper.
 const TARGET_LOSES_DRIVER: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\n",
+    "[target.'cfg(target_os = \"linux\")']\n",
     "rustflags = [\"-Zthreads=8\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
 /// Development flags in `[build]` would leak to every target.
@@ -119,19 +130,19 @@ const BUILD_LEAKS_DEVELOPMENT_FLAGS: &str = concat!(
     "[build]\n",
     "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
-/// A broad Linux condition would also select Linux architectures without proof.
-const BROAD_LINUX_LEAKS_DEVELOPMENT_FLAGS: &str = concat!(
-    "[target.'cfg(target_os = \"linux\")']\n",
+/// An x86_64-only Linux table misses other Linux target architectures.
+const X86_ONLY_LINUX: &str = concat!(
+    "[target.x86_64-unknown-linux-gnu]\n",
     "rustflags = [\"-Zthreads=8\", \"-Clinker=evert-clang-mold\", \"-Clink-arg=-fuse-ld=mold\"]\n"
 );
 /// A stable configuration that names the nightly-only frontend flag.
 const STABLE_WITH_THREADS: &str = concat!(
-    "[target.x86_64-unknown-linux-gnu]\n",
+    "[target.'cfg(target_os = \"linux\")']\n",
     "rustflags = [\"-Zthreads=8\"]\n"
 );
 /// A `rustflags` array spread over several lines, which the reader refuses.
 const SPREAD_ARRAY: &str =
-    "[target.x86_64-unknown-linux-gnu]\nrustflags = [\n  \"-Zthreads=8\",\n]\n";
+    "[target.'cfg(target_os = \"linux\")']\nrustflags = [\n  \"-Zthreads=8\",\n]\n";
 
 /// Checks that a fixture configuration draws the expected number of complaints.
 fn draws(config: &str, pin: Pin, expected: usize) -> Result<(), String> {
@@ -145,9 +156,8 @@ fn draws(config: &str, pin: Pin, expected: usize) -> Result<(), String> {
 
 /// Scenario: configurations of each shape, read on a nightly and a stable pin.
 ///
-/// Invariant: only the exact target triple carries supported development flags;
-/// each missing flag and broad-source leak is reported, and stable refuses
-/// nightly-only flags.
+/// Invariant: one Linux cfg table carries development flags for every Linux
+/// architecture; x86_64-only configuration and missing flags are reported.
 #[rstest]
 #[case::compliant_nightly(NIGHTLY_OK, Pin::Nightly, 0)]
 #[case::linker_spelled_as_a_pair(NIGHTLY_SPELLED_APART, Pin::Nightly, 0)]
@@ -157,11 +167,8 @@ fn draws(config: &str, pin: Pin, expected: usize) -> Result<(), String> {
 #[case::target_loses_the_linker(TARGET_LOSES_LINKER, Pin::Nightly, 1)]
 #[case::target_loses_the_pinned_driver(TARGET_LOSES_DRIVER, Pin::Nightly, 1)]
 #[case::build_table_leaks_to_all_targets(BUILD_LEAKS_DEVELOPMENT_FLAGS, Pin::Nightly, 3)]
-#[case::broad_linux_table_leaks_to_other_architectures(
-    BROAD_LINUX_LEAKS_DEVELOPMENT_FLAGS,
-    Pin::Nightly,
-    3
-)]
+#[case::x86_64_only_linux_table_misses_other_architectures(X86_ONLY_LINUX, Pin::Nightly, 3)]
+#[case::cfg_linux_applies_to_every_linux_architecture(NIGHTLY_OK, Pin::Nightly, 0)]
 #[case::stable_names_the_frontend(STABLE_WITH_THREADS, Pin::Stable, 1)]
 #[case::empty_configuration("", Pin::Nightly, 2)]
 fn the_configuration_reader_reports_each_defect(
@@ -191,18 +198,28 @@ fn a_rustflags_array_spread_over_lines_is_refused() -> Result<(), String> {
 /// malformed nightly channels are errors rather than silently being treated
 /// as stable.
 #[rstest]
-#[case::nightly(NIGHTLY, Some(Pin::Nightly))]
-#[case::undated_nightly(UNDATED_NIGHTLY, Some(Pin::Nightly))]
-#[case::stable(STABLE, Some(Pin::Stable))]
-#[case::stable_channel(STABLE_CHANNEL, Some(Pin::Stable))]
-#[case::beta(BETA, Some(Pin::Stable))]
-#[case::missing(NO_CHANNEL, None)]
-#[case::repeated(TWO_CHANNELS, None)]
-#[case::unknown(UNKNOWN_CHANNEL, None)]
-#[case::unrecognized_nightly_suffix(NIGHTLY_FOO, None)]
-#[case::malformed_nightly_date(MALFORMED_NIGHTLY_DATE, None)]
-fn the_pin_reader_tells_the_channels_apart(#[case] toolchain: &str, #[case] expected: Option<Pin>) {
-    assert_eq!(Pin::read(toolchain).ok(), expected);
+#[case::nightly(NIGHTLY, Ok(Pin::Nightly))]
+#[case::undated_nightly(UNDATED_NIGHTLY, Ok(Pin::Nightly))]
+#[case::stable(STABLE, Ok(Pin::Stable))]
+#[case::stable_channel(STABLE_CHANNEL, Ok(Pin::Stable))]
+#[case::beta(BETA, Ok(Pin::Stable))]
+#[case::missing(NO_CHANNEL, Err(PinError::MissingChannel))]
+#[case::repeated(TWO_CHANNELS, Err(PinError::MultipleChannels(2)))]
+#[case::unknown(UNKNOWN_CHANNEL, Err(PinError::UnsupportedChannel("weekly".to_owned())))]
+#[case::unrecognized_nightly_suffix(
+    NIGHTLY_FOO,
+    Err(PinError::UnsupportedChannel("nightly-foo".to_owned()))
+)]
+#[case::malformed_nightly_date(
+    MALFORMED_NIGHTLY_DATE,
+    Err(PinError::UnsupportedChannel("nightly-2026-5-28".to_owned()))
+)]
+#[case::malformed_channel_assignment(MALFORMED_CHANNEL, Err(PinError::MalformedChannel))]
+fn the_pin_reader_tells_the_channels_apart(
+    #[case] toolchain: &str,
+    #[case] expected: Result<Pin, PinError>,
+) {
+    assert_eq!(Pin::read(toolchain), expected);
 }
 
 /// Builds the assignment a fixture line is expected to read as.
@@ -340,12 +357,36 @@ fn a_continued_command_is_one_command() -> Result<(), String> {
 
 #[test]
 fn every_rustflags_source_is_consistent_with_the_pin() -> Result<(), String> {
-    none_of(&config_problems(CONFIG, Pin::read(TOOLCHAIN)?)?)
+    none_of(&config_problems(
+        CONFIG,
+        Pin::read(TOOLCHAIN).map_err(|error| error.to_string())?,
+    )?)
+}
+
+#[test]
+fn the_cfg_source_applies_to_non_x86_linux_targets() -> Result<(), String> {
+    if !applies_to_target(CONFIG, "x86_64-unknown-linux-gnu")? {
+        return Err("the Linux cfg source does not apply to x86_64 Linux".to_owned());
+    }
+    if !applies_to_target(CONFIG, "aarch64-unknown-linux-gnu")? {
+        return Err("the Linux cfg source does not apply to aarch64 Linux".to_owned());
+    }
+    if applies_to_target(X86_ONLY_LINUX, "aarch64-unknown-linux-gnu")? {
+        return Err("an x86_64-only target table unexpectedly applies to aarch64".to_owned());
+    }
+    if applies_to_target(CONFIG, "x86_64-apple-darwin")? {
+        return Err("the Linux cfg source unexpectedly applies to macOS".to_owned());
+    }
+    if config_problems(X86_ONLY_LINUX, Pin::Nightly)?.is_empty() {
+        return Err("an x86_64-only Linux table must be reported as a defect".to_owned());
+    }
+    Ok(())
 }
 
 #[test]
 fn development_targets_restate_the_flags_on_x86_64_gnu_linux() -> Result<(), String> {
-    let (problems, read) = development_problems(Host::LinuxX86, Pin::read(TOOLCHAIN)?)?;
+    let pin = Pin::read(TOOLCHAIN).map_err(|error| error.to_string())?;
+    let (problems, read) = development_problems(Host::LinuxX86, pin)?;
     none_of(&problems)?;
     if read == 0 {
         return Err(
@@ -358,13 +399,65 @@ fn development_targets_restate_the_flags_on_x86_64_gnu_linux() -> Result<(), Str
 #[rstest]
 #[case::linux_aarch64(Host::LinuxArm)]
 #[case::macos_x86_64(Host::Darwin)]
-fn development_targets_do_not_leak_flags_to_other_hosts(#[case] host: Host) -> Result<(), String> {
-    none_of(&development_problems(host, Pin::read(TOOLCHAIN)?)?.0)
+fn development_targets_route_by_host(#[case] host: Host) -> Result<(), String> {
+    let pin = Pin::read(TOOLCHAIN).map_err(|error| error.to_string())?;
+    none_of(&development_problems(host, pin)?.0)
 }
 
-/// Coverage measures and release ships, so both clear the development flags
-/// and select their own compiler route. Each listed target must run at least
-/// one Cargo command so the check cannot pass without measuring a route.
+#[test]
+fn development_contract_uses_an_injected_runner() -> Result<(), String> {
+    let mut calls = Vec::new();
+    let mut runner = |target: &str, host: Host| {
+        calls.push((target.to_owned(), host));
+        Ok(concat!(
+            "RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }-Zthreads=8 ",
+            "-Clinker=evert-clang-mold -Clink-arg=-fuse-ld=mold\" cargo check\n"
+        )
+        .to_owned())
+    };
+    let (problems, read) = development_problems_with(Host::LinuxX86, Pin::Nightly, &mut runner)?;
+    none_of(&problems)?;
+    if read != 4 || calls.len() != 4 {
+        return Err(format!(
+            "runner read {read} commands over {} calls",
+            calls.len()
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn development_contract_propagates_runner_failures() {
+    let mut runner = |target: &str, _host: Host| Err(format!("cannot inspect {target}"));
+    let result = development_problems_with(Host::LinuxX86, Pin::Nightly, &mut runner);
+    assert_eq!(result, Err("cannot inspect test".to_owned()));
+}
+
+#[test]
+fn held_out_routes_require_inherited_caller_flags() -> Result<(), String> {
+    let mut runner = |target: &str, _host: Host| {
+        let inherited = if target == "coverage" {
+            "${RUSTFLAGS:+$RUSTFLAGS }"
+        } else {
+            ""
+        };
+        Ok(format!(
+            "RUSTFLAGS=\"{inherited}-D warnings\" cargo build\n"
+        ))
+    };
+    let (problems, read) = held_out_problems_with(&mut runner)?;
+    if read != 2 {
+        return Err(format!("read {read} held-out commands, expected 2"));
+    }
+    if !matches!(problems.as_slice(), [problem] if problem.contains("release")) {
+        return Err(format!("unexpected held-out route findings: {problems:#?}"));
+    }
+    Ok(())
+}
+
+/// Coverage measures and release ships, so both omit development flags from
+/// their own route and select their own compiler settings. Each listed target
+/// must run a Cargo command so the check cannot pass without measuring a route.
 #[test]
 fn coverage_and_release_take_neither_flag() -> Result<(), String> {
     let (problems, read) = held_out_problems()?;
