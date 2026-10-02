@@ -225,11 +225,12 @@ as a test assertion on the SHA string.
 
 ## Coverage publication
 
-Pull-request continuous integration (CI) generates LCOV coverage and ratchets
-it against the baseline written by `coverage-main.yml`. The pull-request lane
-publishes no coverage artefact, never contacts CodeScene, and never receives
-`CS_ACCESS_TOKEN`, so a change in CodeScene's application programming interface
-(API) cannot hold a pull request.
+Pull-request continuous integration (CI) uses the mixed Rust/Python coverage
+action to generate Cobertura coverage and ratchets it against the baseline
+written by `coverage-main.yml`. The local `make coverage` target remains LCOV
+and writes `lcov.info`. The pull-request lane publishes no coverage artefact,
+never contacts CodeScene, and never receives `CS_ACCESS_TOKEN`, so a change in
+CodeScene's application programming interface (API) cannot hold a pull request.
 
 `coverage-main.yml` is the only publisher. On each push to `main` it refreshes
 the ratchet baseline and uploads the report to CodeScene. It also runs on

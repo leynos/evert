@@ -146,9 +146,15 @@ def _coverage_route(ref: _JobRef, steps: list[Step], errors: list[str]) -> Found
     index, step = found[0]
     if step.get("env") != LLVM_ENV:
         errors.append(f"{ref.where} coverage must use the explicit LLVM route")
-    expected = {"output-path": "lcov.info", "format": "lcov", "with-ratchet": "true"}
+    expected = {
+        "output-path": "coverage.xml",
+        "format": "cobertura",
+        "with-ratchet": "true",
+    }
     if not all(_has_input(step, key, value) for key, value in expected.items()):
-        errors.append(f"{ref.where} coverage must retain the lcov ratchet selection")
+        errors.append(
+            f"{ref.where} coverage must retain the Cobertura ratchet selection"
+        )
     return index, step
 
 

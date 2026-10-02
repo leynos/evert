@@ -23,6 +23,32 @@ def test_supported_workflow_routes_match_the_documented_inventory() -> None:
 
 
 @pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        pytest.param("format", "lcov", id="legacy-format"),
+        pytest.param("output-path", "lcov.info", id="legacy-output-path"),
+    ],
+)
+def test_mixed_coverage_route_rejects_legacy_lcov_settings(
+    key: str, value: str
+) -> None:
+    """Require a Cobertura report format and matching output path."""
+    documents = fresh_documents()
+    job = jobs("ci.yml", documents["ci.yml"])["build-test"]
+    steps = job.get("steps")
+    assert isinstance(steps, list), "ci.yml build-test steps must be a list"
+    coverage = next(
+        step for step in steps if f"{COVERAGE}@" in str(step.get("uses", ""))
+    )
+    inputs = coverage.get("with")
+    assert isinstance(inputs, dict), "coverage action inputs must be a mapping"
+    inputs[key] = value
+
+    errors = supported_route_violations(documents, GUIDE_TEXT)
+    assert any("Cobertura ratchet selection" in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
     ("workflow", "job_id", "job", "expected"),
     [
         pytest.param(

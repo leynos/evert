@@ -90,8 +90,8 @@ jobs:
           CFLAGS: -fuse-ld=lld
           LDFLAGS: -fuse-ld=lld
         with:
-          output-path: lcov.info
-          format: lcov
+          output-path: coverage.xml
+          format: cobertura
           with-ratchet: 'true'
       # No env binds the token. The uploader is a composite action: a token in
       # its step's env would reach its nested upload-artifact and cache steps
@@ -107,7 +107,7 @@ jobs:
         if: steps.codescene-token.outputs.available == 'true' && github.ref == 'refs/heads/main'
         uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@82feb2b7aac45b7efff40c9c4bb632551b14521c
         with:
-          format: lcov
-          path: lcov.info
+          format: cobertura
+          path: coverage.xml
           mode: upload
           access-token: ${{ secrets.CS_ACCESS_TOKEN }}
