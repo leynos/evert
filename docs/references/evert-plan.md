@@ -346,18 +346,19 @@ CST stays lossless.
 writing expressive, high-performance parsers easy. Critically for Evert's
 peglet notation and its layout-sensitive grammar, Chumsky's parsers are
 recursive descent parsers and are capable of parsing parsing expression
-grammars (PEGs), which includes all known context-free languages; it also
-supports context-sensitive grammars via a set of dedicated combinators that
-integrate cleanly with the rest of the library, allowing it to parse syntaxes
-like Rust-style raw strings and Python-style semantic indentation. Its
-error-recovery model matches FR-3: it can encounter a syntax error, report the
-error, and then attempt to recover into a state in which it can continue
-parsing so that multiple errors can be produced at once and a partial AST can
-still be generated from the input for future compilation stages to consume. The
-modern Chumsky line is the "zero-copy" rewrite, which added support for parsing
-context-sensitive grammars such as Python-style indentation, support for
-manipulating shared state during parsing (allowing arena allocators, cstrees,
-and interners), and a new IterParser trait.
+grammars (PEGs), whose ordered choice expresses many practical context-free and
+some non-context-free languages, though PEGs do not cover every context-free
+language; it also supports context-sensitive grammars via a set of dedicated
+combinators that integrate cleanly with the rest of the library, allowing it to
+parse syntaxes like Rust-style raw strings and Python-style semantic
+indentation. Its error-recovery model matches FR-3: it can encounter a syntax
+error, report the error, and then attempt to recover into a state in which it
+can continue parsing so that multiple errors can be produced at once and a
+partial AST can still be generated from the input for future compilation stages
+to consume. The modern Chumsky line is the "zero-copy" rewrite, which added
+support for parsing context-sensitive grammars such as Python-style
+indentation, support for manipulating shared state during parsing (allowing
+arena allocators, cstrees, and interners), and a new IterParser trait.
 
 **Diagnostics with Ariadne.** Both Logos's and Chumsky's examples render errors
 through Ariadne — error diagnostic rendering in the canonical example is
@@ -423,18 +424,19 @@ per the user's directives and are reflected in the architecture.
 
 ### 0.2.3 Dependency and Tool Research
 
-This sub-section records the latest stable versions and the compatibility
-matrix that constrains the workspace.
+This sub-section records the versions selected for the workspace at the time of
+the research snapshot, noting the latest release where it differs, and the
+compatibility matrix that constrains the workspace.
 
-| Component      | Verified version / constraint         | Notes for Evert                                                                                                                                                                                    |
-| -------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Logos          | 0.16.x (latest 0.16.1)                | Logos 0.16 rewrites the lexer engine, prioritizing correctness and robust regex support, and the Minimum Supported Rust Version (MSRV) has been bumped to 1.80 to leverage features like LazyLock. |
-| Chumsky        | 0.11.x (zero-copy line; 1.0 in alpha) | Modern context-sensitive + error-recovery API; pairs with Ariadne.                                                                                                                                 |
-| Ariadne        | ~0.4 (per Logos dev-deps)             | Diagnostic rendering; Logos's own dev-dependencies pin `ariadne ^0.4` and `chumsky ^0.10.0`, confirming first-class integration of the three.                                                      |
-| Salsa          | Modern macro framework, pre-1.0       | Proven in rust-analyzer; uses `#[salsa::input]`/`#[salsa::tracked]`, interning, and durability.                                                                                                    |
-| Inkwell        | 0.8.x                                 | Backend binding (deferred).                                                                                                                                                                        |
-| LLVM           | 11–22 (pin one major)                 | Coupled to Inkwell feature flag.                                                                                                                                                                   |
-| Rust toolchain | 2024 edition, ≥ 1.85                  | Required by Inkwell 0.8.                                                                                                                                                                           |
+| Component      | Verified version / constraint           | Notes for Evert                                                                                                                                                                                    |
+| -------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Logos          | 0.16.x (latest 0.16.1)                  | Logos 0.16 rewrites the lexer engine, prioritizing correctness and robust regex support, and the Minimum Supported Rust Version (MSRV) has been bumped to 1.80 to leverage features like LazyLock. |
+| Chumsky        | 0.11.x (zero-copy line; 1.0 in alpha)   | Modern context-sensitive + error-recovery API; pairs with Ariadne.                                                                                                                                 |
+| Ariadne        | ~0.4 (per Logos dev-deps)               | Diagnostic rendering; Logos's own dev-dependencies pin `ariadne ^0.4` and `chumsky ^0.10.0`, confirming first-class integration of the three.                                                      |
+| Salsa          | Modern macro framework, pre-1.0         | Proven in rust-analyzer; uses `#[salsa::input]`/`#[salsa::tracked]`, interning, and durability.                                                                                                    |
+| Inkwell        | 0.8.x selected (latest 0.10.0, 2026-08) | Backend binding (deferred); pinned to the 0.8 line the plan was researched against, and moving to a newer line is a deliberate upgrade.                                                            |
+| LLVM           | 11–22 (pin one major)                   | Coupled to Inkwell feature flag.                                                                                                                                                                   |
+| Rust toolchain | 2024 edition, ≥ 1.85                    | Required by Inkwell 0.8.                                                                                                                                                                           |
 
 *Table 1: Verified dependency versions and compatibility constraints.*
 
@@ -876,9 +878,9 @@ of the tree.
 
 ```text
 /
-├── Cargo.toml                       # Workspace manifest: members, shared deps, lints
+├── Cargo.toml                       # Workspace manifest: members, shared deps, lints, Rust 2024 edition
 ├── Cargo.lock                       # Pinned dependency graph (committed for the binary)
-├── rust-toolchain.toml              # Pin Rust 2024 edition, channel >= 1.85
+├── rust-toolchain.toml              # Pin the exact nightly-2026-05-28 toolchain
 ├── rustfmt.toml                     # Formatting configuration
 ├── clippy.toml                      # Lint configuration thresholds
 ├── deny.toml                        # cargo-deny: license + advisory + ban rules
@@ -995,8 +997,8 @@ of the tree.
     `crates/evert_runtime/src/text.rs` — real Unicode `Text`.
 - **Configuration files**:
   - `Cargo.toml` (workspace) — central member list, shared dependency versions,
-    and workspace lints.
-  - `rust-toolchain.toml` — pins the 2024 edition and the ≥ 1.85 channel.
+    workspace lints, and the Rust 2024 edition.
+  - `rust-toolchain.toml` — pins the exact `nightly-2026-05-28` toolchain.
   - `rustfmt.toml`, `clippy.toml`, `deny.toml` — formatting, linting, and
     supply-chain policy.
 - **Entry points**:
@@ -1109,40 +1111,40 @@ priority. Priority reflects MVP criticality (High = required for the
 interpreter-first MVP; Medium = required for completeness/quality; Low =
 scaffold for deferred work).
 
-| File Path                                                                               | Purpose                                         | Content Type   | Priority |
-| --------------------------------------------------------------------------------------- | ----------------------------------------------- | -------------- | -------- |
-| `Cargo.toml`                                                                            | Workspace manifest: members, shared deps, lints | Config         | High     |
-| `rust-toolchain.toml`                                                                   | Pin 2024 edition, channel ≥ 1.85                | Config         | High     |
-| `rustfmt.toml` / `clippy.toml` / `deny.toml`                                            | Formatting, lint, supply-chain policy           | Config         | High     |
-| `.github/workflows/ci.yml`                                                              | build, test, fmt, clippy, cargo-deny            | CI/Config      | High     |
-| `crates/evert_span/src/lib.rs`                                                          | Spans, FileId, interner, Symbol                 | Source         | High     |
-| `crates/evert_syntax/src/lexer.rs`                                                      | Logos tokens (ECLP-0002)                        | Source         | High     |
-| `crates/evert_syntax/src/layout.rs`                                                     | Offside-rule layout pass                        | Source         | High     |
-| `crates/evert_syntax/src/parser.rs`                                                     | Chumsky grammar + recovery                      | Source         | High     |
-| `crates/evert_db/src/lib.rs`                                                            | Salsa database + query graph                    | Source         | High     |
-| `crates/evert_hir/src/resolve.rs`                                                       | Name resolution + DefIds                        | Source         | High     |
-| `crates/evert_types/src/infer.rs`                                                       | HM inference + effect rows + InferenceContext   | Source         | High     |
-| `crates/evert_types/src/exhaustive.rs`                                                  | Match exhaustiveness checker                    | Source         | High     |
-| `crates/evert_core/src/core.rs`                                                         | Typed Core calculus                             | Source         | High     |
-| `crates/evert_lower/src/effects.rs`                                                     | Selective CPS effect/handler lowering           | Source         | High     |
-| `crates/evert_interpreter/src/eval.rs`                                                  | Tree-walking Core interpreter (oracle)          | Source         | High     |
-| `crates/evert_runtime/src/thunk.rs`                                                     | ThunkState/Thunk, black-hole detection          | Source         | High     |
-| `crates/evert_runtime/src/text.rs`                                                      | Real Unicode Text                               | Source         | High     |
-| `crates/evert_codegen_api/src/lib.rs`                                                   | Backend trait + TargetSpec                      | Source         | Medium   |
-| `crates/evert_codegen_llvm/src/lib.rs`                                                  | LLVM backend (textual IR first)                 | Source         | Low      |
-| `crates/evert_driver/src/main.rs`                                                       | `evert` CLI entry point                         | Source         | High     |
-| `stdlib/std/prelude.evt`                                                                | Bootstrap prelude in Evert                      | Source (Evert) | High     |
-| `examples/greeting.evt`, `register.evt`, `histogram.evt`, `streams.evt`, `app_main.evt` | Verbatim user programs / smoke tests            | Source (Evert) | High     |
-| `tests/conformance/purity.rs`                                                           | `pure fn` ⇒ empty row (ECLP-0005)               | Test           | High     |
-| `tests/conformance/laziness.rs`                                                         | lazy purity, black-hole, memoization            | Test           | High     |
-| `tests/conformance/exhaustiveness.rs`                                                   | non-exhaustive match rejected                   | Test           | High     |
-| `tests/conformance/coherence.rs`                                                        | orphan instances rejected                       | Test           | Medium   |
-| `tests/conformance/regions.rs`                                                          | mutate escape rejected                          | Test           | Medium   |
-| `tests/ui/*.stderr`                                                                     | Diagnostic golden fixtures                      | Test           | Medium   |
-| `docs/eclp/ECLP-0000-mission.md` … `ECLP-0030-refusals.md`                              | Specification corpus                            | Documentation  | High     |
-| `docs/grammar/evert.peglet`                                                             | Normative peglet grammar                        | Documentation  | High     |
-| `docs/architecture/pipeline.md`                                                         | Pipeline + query-graph docs                     | Documentation  | Medium   |
-| `README.md` / `CHANGELOG.md`                                                            | Overview, build/run, change log                 | Documentation  | High     |
+| File Path                                                                               | Purpose                                                            | Content Type   | Priority |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------- | -------- |
+| `Cargo.toml`                                                                            | Workspace manifest: members, shared deps, lints, Rust 2024 edition | Config         | High     |
+| `rust-toolchain.toml`                                                                   | Pin the exact nightly-2026-05-28 toolchain                         | Config         | High     |
+| `rustfmt.toml` / `clippy.toml` / `deny.toml`                                            | Formatting, lint, supply-chain policy                              | Config         | High     |
+| `.github/workflows/ci.yml`                                                              | build, test, fmt, clippy, cargo-deny                               | CI/Config      | High     |
+| `crates/evert_span/src/lib.rs`                                                          | Spans, FileId, interner, Symbol                                    | Source         | High     |
+| `crates/evert_syntax/src/lexer.rs`                                                      | Logos tokens (ECLP-0002)                                           | Source         | High     |
+| `crates/evert_syntax/src/layout.rs`                                                     | Offside-rule layout pass                                           | Source         | High     |
+| `crates/evert_syntax/src/parser.rs`                                                     | Chumsky grammar + recovery                                         | Source         | High     |
+| `crates/evert_db/src/lib.rs`                                                            | Salsa database + query graph                                       | Source         | High     |
+| `crates/evert_hir/src/resolve.rs`                                                       | Name resolution + DefIds                                           | Source         | High     |
+| `crates/evert_types/src/infer.rs`                                                       | HM inference + effect rows + InferenceContext                      | Source         | High     |
+| `crates/evert_types/src/exhaustive.rs`                                                  | Match exhaustiveness checker                                       | Source         | High     |
+| `crates/evert_core/src/core.rs`                                                         | Typed Core calculus                                                | Source         | High     |
+| `crates/evert_lower/src/effects.rs`                                                     | Selective CPS effect/handler lowering                              | Source         | High     |
+| `crates/evert_interpreter/src/eval.rs`                                                  | Tree-walking Core interpreter (oracle)                             | Source         | High     |
+| `crates/evert_runtime/src/thunk.rs`                                                     | ThunkState/Thunk, black-hole detection                             | Source         | High     |
+| `crates/evert_runtime/src/text.rs`                                                      | Real Unicode Text                                                  | Source         | High     |
+| `crates/evert_codegen_api/src/lib.rs`                                                   | Backend trait + TargetSpec                                         | Source         | Medium   |
+| `crates/evert_codegen_llvm/src/lib.rs`                                                  | LLVM backend (textual IR first)                                    | Source         | Low      |
+| `crates/evert_driver/src/main.rs`                                                       | `evert` CLI entry point                                            | Source         | High     |
+| `stdlib/std/prelude.evt`                                                                | Bootstrap prelude in Evert                                         | Source (Evert) | High     |
+| `examples/greeting.evt`, `register.evt`, `histogram.evt`, `streams.evt`, `app_main.evt` | Verbatim user programs / smoke tests                               | Source (Evert) | High     |
+| `tests/conformance/purity.rs`                                                           | `pure fn` ⇒ empty row (ECLP-0005)                                  | Test           | High     |
+| `tests/conformance/laziness.rs`                                                         | lazy purity, black-hole, memoization                               | Test           | High     |
+| `tests/conformance/exhaustiveness.rs`                                                   | non-exhaustive match rejected                                      | Test           | High     |
+| `tests/conformance/coherence.rs`                                                        | orphan instances rejected                                          | Test           | Medium   |
+| `tests/conformance/regions.rs`                                                          | mutate escape rejected                                             | Test           | Medium   |
+| `tests/ui/*.stderr`                                                                     | Diagnostic golden fixtures                                         | Test           | Medium   |
+| `docs/eclp/ECLP-0000-mission.md` … `ECLP-0030-refusals.md`                              | Specification corpus                                               | Documentation  | High     |
+| `docs/grammar/evert.peglet`                                                             | Normative peglet grammar                                           | Documentation  | High     |
+| `docs/architecture/pipeline.md`                                                         | Pipeline + query-graph docs                                        | Documentation  | Medium   |
+| `README.md` / `CHANGELOG.md`                                                            | Overview, build/run, change log                                    | Documentation  | High     |
 
 *Table 3: Representative deliverables by purpose, content type, and priority.*
 
