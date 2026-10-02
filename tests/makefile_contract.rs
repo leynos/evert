@@ -1,218 +1,379 @@
-//! Contract test asserting the Makefile wires the dev-fast profile into
-//! the standard development targets and keeps it out of coverage.
+//! Contract tests for Make's evaluated Cargo routes.
 //!
-//! Operation Parabellum's Wave 2+3 sponsor decision makes the dev-fast
-//! profile (Cranelift plus mold, `tools/dev-fast/config.toml`) the
-//! standard local development path: `make build`, `make test`,
-//! `make lint`, and `make typecheck` must pass `--config` pointing at
-//! that fragment to every cargo invocation they make, while
-//! `make coverage` must keep the supported LLVM backend and platform
-//! linker. This test reads the repository's own `Makefile` textually
-//! and fails fast if a future edit drops the wiring, before the
-//! estate-wide audit (concordat's forthcoming DF-004 rule) would ever
-//! catch it. See AGENTS.md's "dev-fast is the standard development
-//! path" section for the convention this test enforces.
-//!
-//! Assertions check each cargo-invoking recipe *line* individually
-//! rather than the recipe block as a whole: a target with several
-//! cargo lines (nextest plus doc-tests, `cargo doc` plus `cargo
-//! clippy`) would otherwise pass a whole-block substring match even
-//! when only one of those lines carries `--config`.
+//! These tests ask Make to expand each build target with an injected Cargo
+//! executable. They guard the actual commands, caller flag inheritance,
+//! development preflight ordering, and the explicit routes used for coverage
+//! and stable release builds.
 
 use std::{io, process::Command};
 
-use camino::Utf8Path;
-use cap_std::{ambient_authority, fs_utf8::Dir};
 use rstest::rstest;
 
-/// Opens the crate manifest directory as a capability directory handle,
-/// so file access below stays scoped to the checkout rather than
-/// touching the ambient working directory via `std::fs`.
-fn manifest_dir() -> io::Result<Dir> {
-    Dir::open_ambient_dir(env!("CARGO_MANIFEST_DIR"), ambient_authority())
+/// Cargo executable substituted into evaluated Make commands.
+const PROBE_CARGO: &str = "probe-cargo";
+const NATIVE_TARGET: &str = "x86_64-unknown-linux-gnu";
+const CROSS_TARGET: &str = "aarch64-unknown-linux-gnu";
+const NATIVE_SPLIT_TARGET: &str = "--target x86_64-unknown-linux-gnu";
+const NATIVE_JOINED_TARGET: &str = "--target=x86_64-unknown-linux-gnu";
+const CROSS_SPLIT_TARGET: &str = "--target aarch64-unknown-linux-gnu";
+const CROSS_JOINED_TARGET: &str = "--target=aarch64-unknown-linux-gnu";
+const DEVELOPMENT_FLAGS: [&str; 3] = [
+    "-Zthreads=8",
+    "-Clinker=evert-clang-mold",
+    "-Clink-arg=-fuse-ld=mold",
+];
+const HOSTILE_RUST_FLAGS: &str = concat!(
+    "-D warnings -Zcodegen-backend=cranelift ",
+    "-Zthreads=8 -Clinker=evert-clang-mold ",
+    "-Clink-arg=-fuse-ld=mold"
+);
+
+/// Captured status and output from an evaluated Make target.
+struct MakeDryRun {
+    /// Whether Make completed successfully.
+    succeeded: bool,
+    /// Commands that Make would execute.
+    stdout: String,
+    /// Diagnostics emitted while Make evaluated the target.
+    stderr: String,
 }
 
-/// Reads the repository's `Makefile` as UTF-8 text.
-fn read_makefile() -> io::Result<String> { manifest_dir()?.read_to_string("Makefile") }
-
-/// Returns whether `relative` exists as a file beneath the crate
-/// manifest directory.
-fn manifest_has_file(relative: &Utf8Path) -> io::Result<bool> {
-    Ok(manifest_dir()?.is_file(relative))
+/// Evaluates a Make target without running its recipe commands.
+fn make_dry_run(target: &str, build_host: &str, build_arch: &str) -> io::Result<MakeDryRun> {
+    make_dry_run_with_options(target, build_host, build_arch, &[])
 }
 
-/// Returns the recipe lines following an unindented `<target>:` line, up
-/// to (but excluding) the next unindented line. `None` means the target
-/// itself was not found; `Some(String::new())` means the target exists
-/// but has no recipe of its own (a dependency-only forwarding rule).
-fn recipe_block(makefile: &str, target: &str) -> Option<String> {
-    let header = format!("{target}:");
-    let mut found_header = false;
-    let mut block = Vec::new();
-    for line in makefile.lines() {
-        if found_header {
-            if line.starts_with('\t') || line.starts_with(' ') {
-                block.push(line);
-            } else {
-                break;
-            }
-        } else if line.starts_with(&header) {
-            found_header = true;
-        }
+/// Evaluates a Make route with explicit command-line variable assignments.
+fn make_dry_run_with_options(
+    target: &str,
+    build_host: &str,
+    build_arch: &str,
+    options: &[(&str, &str)],
+) -> io::Result<MakeDryRun> {
+    let build_host_assignment = format!("BUILD_HOST_OS={build_host}");
+    let build_arch_assignment = format!("BUILD_HOST_ARCH={build_arch}");
+    let mut command = Command::new("make");
+    command
+        .args([
+            "--dry-run",
+            "--always-make",
+            "--no-print-directory",
+            target,
+            &build_host_assignment,
+            &build_arch_assignment,
+            "CARGO=probe-cargo",
+        ])
+        .env("RUSTFLAGS", HOSTILE_RUST_FLAGS)
+        .env("CARGO_ENCODED_RUSTFLAGS", "encoded-caller-flags")
+        .env("GITHUB_ACTIONS", "false")
+        .current_dir(env!("CARGO_MANIFEST_DIR"));
+    for (name, value) in options {
+        command.arg(format!("{name}={value}"));
     }
-    found_header.then(|| block.join("\n"))
+    let output = command.output()?;
+    Ok(MakeDryRun {
+        succeeded: output.status.success(),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
 }
 
-/// Matches the estate's `(?i)dev[-_]fast` convention without pulling in
-/// the `regex` crate for a single fixed pattern.
-fn mentions_dev_fast(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    lower.contains("dev-fast") || lower.contains("dev_fast")
-}
-
-/// Returns the lines within `block` that actually invoke cargo via the
-/// Makefile's `$(CARGO)` macro, as distinct from unrelated recipe lines
-/// such as the Whitaker Dylint invocation, which is not cargo and is
-/// not expected to carry `--config`.
-fn cargo_invocation_lines(block: &str) -> Vec<&str> {
-    block
-        .lines()
-        .filter(|line| line.contains("$(CARGO)"))
+/// Finds logical Cargo commands in evaluated Make output, including continuations.
+fn cargo_invocation_lines(output: &str) -> Vec<String> {
+    logical_lines(output)
+        .into_iter()
+        .filter(|line| contains_cargo_executable(line))
         .collect()
 }
 
-/// Confirms every cargo invocation in a standard development target's
-/// recipe routes through the dev-fast fragment.
+/// Folds continued Make output lines into their logical commands.
 ///
-/// The `#[case]` pairs the target a developer invokes with the Makefile
-/// rule whose recipe text should be checked. `build`'s own rule has no
-/// recipe of its own: it depends on the `target/%/$(TARGET)` pattern
-/// rule that actually invokes cargo (shared with `release`, which must
-/// stay excluded), so that is the block resolved and checked here.
+/// For example, `probe-cargo check \` followed by an indented `--all-targets`
+/// line becomes `probe-cargo check --all-targets`.
+fn logical_lines(output: &str) -> Vec<String> {
+    let mut logical_lines = Vec::new();
+    let mut pending = String::new();
+    for line in output.lines() {
+        let trimmed = line.trim_end();
+        let is_continued = trimmed.ends_with('\\');
+        let content = trimmed.strip_suffix('\\').unwrap_or(trimmed).trim();
+        if !pending.is_empty() {
+            pending.push(' ');
+        }
+        pending.push_str(content);
+        if !is_continued {
+            logical_lines.push(std::mem::take(&mut pending));
+        }
+    }
+    if !pending.is_empty() {
+        logical_lines.push(pending);
+    }
+    logical_lines
+}
+
+/// Returns whether a logical command names a supported Cargo executable.
+///
+/// ```text
+/// contains_cargo_executable("env RUSTFLAGS=x /usr/bin/cargo check") -> true
+/// contains_cargo_executable("echo cargo") -> true
+/// contains_cargo_executable("probe-cargo check") -> true
+/// ```
+fn contains_cargo_executable(line: &str) -> bool {
+    line.split_whitespace().any(|word| {
+        word == PROBE_CARGO
+            || word == "cargo"
+            || word == "cargo.exe"
+            || word.ends_with("/cargo")
+            || word.ends_with("/cargo.exe")
+    })
+}
+
+/// Isolates the compiler environment applied after a cross-route preflight.
+fn effective_cargo_route(command: &str) -> &str {
+    command
+        .split_once("exec env -u CARGO_ENCODED_RUSTFLAGS ")
+        .map_or(command, |(_, route)| route)
+}
+
+/// Checks that a development command keeps the standard flags for its host.
+fn has_development_route(command: &str, build_host: &str, build_arch: &str) -> bool {
+    let required_flags = ["env -u CARGO_ENCODED_RUSTFLAGS", "-D warnings"];
+    let development_is_supported =
+        build_host == "Linux" && matches!(build_arch, "x86_64" | "aarch64");
+    let effective_route = effective_cargo_route(command);
+    let has_guarded_flags = command.contains("bash -c 'make_flags=$1; shift; effective_flags=");
+    let rustflags_assignment = if has_guarded_flags {
+        "RUSTFLAGS=\"$effective_flags\""
+    } else {
+        "RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }"
+    };
+
+    required_flags.iter().all(|flag| command.contains(flag))
+        && effective_route.contains(rustflags_assignment)
+        && DEVELOPMENT_FLAGS
+            .iter()
+            .all(|flag| effective_route.contains(flag) == development_is_supported)
+}
+
+/// Confirms every development Cargo line uses the caller's injected binary,
+/// preserves inherited `RUSTFLAGS`, and carries the selected host flags.
 #[rstest]
-#[case("build", "target/%/$(TARGET)")]
-#[case("test", "test")]
-#[case("lint", "lint")]
-#[case("typecheck", "typecheck")]
-fn standard_targets_use_dev_fast(#[case] invoked_target: &str, #[case] recipe_target: &str) {
-    let makefile = read_makefile().expect("Makefile must be readable");
-    let block = recipe_block(&makefile, recipe_target).unwrap_or_else(|| {
-        panic!(
-            "Makefile target `{recipe_target}` (backing `make {invoked_target}`) was not found; \
-             the dev-fast standard-path convention requires it to exist and route cargo through \
-             --config tools/dev-fast/config.toml, per AGENTS.md's \"dev-fast is the standard \
-             development path\" section"
-        )
-    });
-    let cargo_lines = cargo_invocation_lines(&block);
+#[case::linux_x86_64_build("build", 1, "Linux", "x86_64")]
+#[case::darwin_build_excludes_dev_flags("build", 1, "Darwin", "x86_64")]
+#[case::linux_aarch64_build("build", 1, "Linux", "aarch64")]
+#[case::linux_x86_64_test("test", 2, "Linux", "x86_64")]
+#[case::darwin_test_excludes_dev_flags("test", 2, "Darwin", "x86_64")]
+#[case::linux_aarch64_test("test", 2, "Linux", "aarch64")]
+#[case::linux_x86_64_lint("lint", 2, "Linux", "x86_64")]
+#[case::darwin_lint_excludes_dev_flags("lint", 2, "Darwin", "x86_64")]
+#[case::linux_aarch64_lint("lint", 2, "Linux", "aarch64")]
+#[case::linux_x86_64_typecheck("typecheck", 1, "Linux", "x86_64")]
+#[case::darwin_typecheck_excludes_dev_flags("typecheck", 1, "Darwin", "x86_64")]
+#[case::linux_aarch64_typecheck("typecheck", 1, "Linux", "aarch64")]
+fn development_targets_expand_each_cargo_command(
+    #[case] target: &str,
+    #[case] expected_commands: usize,
+    #[case] build_host: &str,
+    #[case] build_arch: &str,
+) {
+    let run = make_dry_run(target, build_host, build_arch).expect("make --dry-run must run");
     assert!(
-        !cargo_lines.is_empty(),
-        "Makefile target `{recipe_target}` (backing `make {invoked_target}`) has no $(CARGO) \
-         invocation to check; the dev-fast standard-path convention expects at least one, per \
-         AGENTS.md's \"dev-fast is the standard development path\" section"
+        run.succeeded,
+        "`make --dry-run {target}` failed for {build_host}: {}",
+        run.stderr
     );
-    for line in cargo_lines {
+
+    let commands = cargo_invocation_lines(&run.stdout);
+    assert_eq!(
+        commands.len(),
+        expected_commands,
+        "`make --dry-run {target}` must expose every Cargo invocation: {}",
+        run.stdout
+    );
+    for command in &commands {
         assert!(
-            line.contains("--config"),
-            "Makefile target `{recipe_target}` (backing `make {invoked_target}`) has a cargo \
-             invocation that does not pass --config: `{line}`; every cargo line must use the \
-             dev-fast profile, per AGENTS.md's \"dev-fast is the standard development path\" \
-             section"
+            command.split_whitespace().any(|word| word == PROBE_CARGO),
+            "`make --dry-run {target}` bypassed CARGO=probe-cargo: {command}"
         );
         assert!(
-            mentions_dev_fast(line),
-            "Makefile target `{recipe_target}` (backing `make {invoked_target}`) has a cargo \
-             invocation whose --config does not reference the dev-fast fragment: `{line}`, per \
-             AGENTS.md's \"dev-fast is the standard development path\" section"
+            has_development_route(command, build_host, build_arch),
+            "`make --dry-run {target}` selected the wrong development route for \
+             {build_host}/{build_arch}: {command}"
+        );
+    }
+
+    let (preflight_position, first_cargo_position) =
+        whitaker_binding::preflight_and_cargo_positions(&run.stdout)
+            .expect("development targets must preflight before exposing Cargo commands");
+    assert!(
+        preflight_position < first_cargo_position,
+        "`make --dry-run {target}` must check build tools before compilation: {}",
+        run.stdout
+    );
+}
+
+/// Keeps the lint suite on its own toolchain and away from development flags.
+#[test]
+fn whitaker_does_not_inherit_development_flags() {
+    let run = make_dry_run_with_options(
+        "lint",
+        "Linux",
+        "x86_64",
+        &[("RUST_FLAGS", HOSTILE_RUST_FLAGS)],
+    )
+    .expect("make --dry-run must run");
+    assert!(
+        run.succeeded,
+        "`make --dry-run lint` failed: {}",
+        run.stderr
+    );
+    let commands: Vec<_> = run
+        .stdout
+        .lines()
+        .filter(|line| line.split_whitespace().any(|word| word == "whitaker"))
+        .collect();
+    assert_eq!(
+        commands.len(),
+        1,
+        "lint must expose one Whitaker invocation: {}",
+        run.stdout
+    );
+    let command = commands
+        .first()
+        .expect("lint must expose a Whitaker command");
+    assert!(
+        command.contains("env -u CARGO_ENCODED_RUSTFLAGS"),
+        "Whitaker must receive an isolated compiler environment: {command}"
+    );
+    assert!(
+        command.contains("RUSTFLAGS=\"-D warnings\""),
+        "Whitaker must use its isolated warnings policy: {command}"
+    );
+    assert!(
+        !command.contains("${RUSTFLAGS") && !command.contains("encoded-caller-flags"),
+        "Whitaker must not inherit ambient compiler flags: {command}"
+    );
+    for development_flag in DEVELOPMENT_FLAGS {
+        assert!(
+            !command.contains(development_flag),
+            "Whitaker must not inherit the repository development route: {command}"
         );
     }
 }
 
-/// Confirms the coverage target keeps the supported LLVM backend and
-/// platform linker rather than picking up the dev-fast fragment.
-#[test]
-fn coverage_target_excludes_dev_fast() {
-    let makefile = read_makefile().expect("Makefile must be readable");
-    let Some(block) = recipe_block(&makefile, "coverage") else {
-        return; // No coverage target in this repository; nothing to guard.
-    };
-    assert!(
-        !mentions_dev_fast(&block),
-        "Makefile target `coverage` must not reference the dev-fast fragment: coverage builds \
-         require the supported LLVM backend and platform linker, per AGENTS.md's \"dev-fast is \
-         the standard development path\" section"
-    );
-}
-
-/// Confirms the dev-fast fragment the Makefile wiring depends on exists.
-#[test]
-fn dev_fast_fragment_exists() {
-    let relative = Utf8Path::new("tools/dev-fast/config.toml");
-    let found = manifest_has_file(relative).expect("manifest directory must be readable");
-    assert!(
-        found,
-        "{relative} must exist: the standard build/test/lint/typecheck targets pass --config \
-         pointing at it"
-    );
-}
-
-/// Runs `make --dry-run <target> CARGO=<cargo_override>` in the crate
-/// root and returns its captured stdout. `--dry-run` prints the recipe
-/// Make would run without executing it, so this needs neither a
-/// nightly toolchain nor `mold` installed.
-fn make_dry_run(target: &str, cargo_override: &str) -> io::Result<String> {
-    let output = Command::new("make")
-        .arg("--dry-run")
-        .arg(target)
-        .arg(format!("CARGO={cargo_override}"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()?;
-    String::from_utf8(output.stdout)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
-}
-
-/// Confirms the opt-in `dev-build`/`dev-test` targets honour a CARGO
-/// override, proving they invoke `$(CARGO)` rather than a hard-coded
-/// `cargo`. Overriding CARGO on the command line must show up ahead of
-/// `--config`, which must in turn come before the dev-fast fragment
-/// reference, in the emitted recipe.
+/// Keeps coverage and stable release compilation outside the development
+/// backend, frontend, and linker route.
 #[rstest]
-#[case("dev-build")]
-#[case("dev-test")]
-fn dev_fast_targets_honour_cargo_override(#[case] target: &str) {
-    let output = make_dry_run(target, "probe-cargo").expect("make --dry-run must run and succeed");
-    let cargo_pos = output.find("probe-cargo").unwrap_or_else(|| {
-        panic!(
-            "`make --dry-run {target} CARGO=probe-cargo` did not emit \"probe-cargo\"; the recipe \
-             must invoke $(CARGO) rather than a hard-coded cargo, per AGENTS.md's \"dev-fast is \
-             the standard development path\" section. Output: {output:?}"
-        )
-    });
-    let config_pos = output.find("--config").unwrap_or_else(|| {
-        panic!(
-            "`make --dry-run {target} CARGO=probe-cargo` did not emit \"--config\". Output: \
-             {output:?}"
-        )
-    });
+#[case::linux_x86_64_coverage("coverage", 1, "Linux", "x86_64")]
+#[case::linux_x86_64_release("release", 1, "Linux", "x86_64")]
+#[case::linux_aarch64_release("release", 1, "Linux", "aarch64")]
+#[case::darwin_x86_64_release("release", 1, "Darwin", "x86_64")]
+fn excluded_targets_expand_their_own_cargo_commands(
+    #[case] target: &str,
+    #[case] expected_commands: usize,
+    #[case] build_host: &str,
+    #[case] build_arch: &str,
+) {
+    let run = make_dry_run(target, build_host, build_arch).expect("make --dry-run must run");
     assert!(
-        cargo_pos < config_pos,
-        "`make --dry-run {target} CARGO=probe-cargo` must emit the substituted cargo binary \
-         before --config; got: {output:?}"
+        run.succeeded,
+        "`make --dry-run {target}` failed for {build_host}: {}",
+        run.stderr
     );
-    let lower = output.to_lowercase();
-    let dev_fast_pos = ["dev-fast", "dev_fast"]
-        .into_iter()
-        .filter_map(|needle| lower.find(needle))
-        .min()
-        .unwrap_or_else(|| {
-            panic!(
-                "`make --dry-run {target} CARGO=probe-cargo` did not reference the dev-fast \
-                 fragment. Output: {output:?}"
-            )
-        });
+
+    let commands = cargo_invocation_lines(&run.stdout);
+    assert_eq!(
+        commands.len(),
+        expected_commands,
+        "`make --dry-run {target}` must expose every Cargo invocation: {}",
+        run.stdout
+    );
+    for command in &commands {
+        assert!(
+            command.split_whitespace().any(|word| word == PROBE_CARGO),
+            "`make --dry-run {target}` bypassed CARGO=probe-cargo: {command}"
+        );
+        assert!(
+            command.contains("env -u CARGO_ENCODED_RUSTFLAGS"),
+            "`make --dry-run {target}` must clear encoded flags before applying its route: \
+             {command}"
+        );
+        assert!(
+            command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }"),
+            "held-out target {target} must preserve caller RUSTFLAGS: {command}"
+        );
+        for development_flag in DEVELOPMENT_FLAGS {
+            assert!(
+                !command.contains(development_flag),
+                "`make --dry-run {target}` inherited {development_flag}: {command}"
+            );
+        }
+    }
+
+    if target == "coverage" {
+        let coverage_command = commands
+            .first()
+            .expect("coverage must expose its Cargo invocation");
+        assert!(
+            coverage_command.contains("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang")
+                && coverage_command.contains("-fuse-ld=lld")
+                && coverage_command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }"),
+            "coverage must retain its LLVM-compatible linker route: {coverage_command}"
+        );
+    } else {
+        let release_command = commands
+            .first()
+            .expect("release must expose its Cargo invocation");
+        assert!(
+            release_command.contains("probe-cargo +stable")
+                && release_command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }"),
+            "release must select stable Rust and preserve caller compiler flags: {release_command}"
+        );
+    }
+}
+
+/// Confirms a missing pinned build tool stops typechecking with repair guidance.
+#[cfg(target_os = "linux")]
+#[test]
+fn failed_build_tools_preflight_stops_typecheck_before_cargo() {
+    let output = Command::new("make")
+        .args([
+            "--always-make",
+            "--no-print-directory",
+            "typecheck",
+            "CARGO=echo CARGO_WAS_RUN",
+        ])
+        .env("BUILD_TOOLS_PREFIX", "/dev/null/evert-pr64-missing")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("make typecheck must run");
+    let diagnostics = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
     assert!(
-        config_pos < dev_fast_pos,
-        "`make --dry-run {target} CARGO=probe-cargo` must emit --config before the dev-fast \
-         fragment reference; got: {output:?}"
+        !output.status.success(),
+        "typecheck must stop when the pinned build tools are unavailable: {diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("make install-build-tools"),
+        "the failed preflight must explain how to install the required tools: {diagnostics}"
+    );
+    assert!(
+        !diagnostics.contains("CARGO_WAS_RUN"),
+        "the typecheck Cargo recipe must not run after a failed preflight: {diagnostics}"
     );
 }
+
+/// Checks failure propagation after the successful Cargo command stubs.
+#[path = "makefile_contract_support/whitaker_binding.rs"]
+mod whitaker_binding;
+
+#[path = "makefile_contract_support/clippy_target_route.rs"]
+mod clippy_target_route;
+
+#[cfg(target_os = "linux")]
+#[path = "makefile_contract_support/cross_caller_flags.rs"]
+mod cross_caller_flags;

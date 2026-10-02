@@ -56,15 +56,24 @@ jobs:
       - name: Setup Rust
         uses: leynos/shared-actions/.github/actions/setup-rust@c4ed5ffaf0640b1907d5359a87fd1677034eec27
         with:
+          install-mold: 'true'
           expect-cache: any
-      - name: Install mold linker
+      - name: Install pinned linker
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          # mold accelerates dev builds; coverage uses lld for llvm-tools compatibility.
+          # The pinned linker accelerates dev builds; coverage uses lld for llvm-tools compatibility.
           sudo apt-get update \
             && sudo apt-get install --yes --no-install-recommends clang lld mold
+      - name: Install build tools
+        run: make install-build-tools
+      - name: Check coverage compiler environment
+        run: |
+          if [ "${CARGO_ENCODED_RUSTFLAGS+x}" ]; then
+            echo "::error::CARGO_ENCODED_RUSTFLAGS must be unset for LLVM coverage" >&2
+            exit 1
+          fi
       - name: Log coverage linker configuration
         run: |
           echo "Coverage linker: clang"
