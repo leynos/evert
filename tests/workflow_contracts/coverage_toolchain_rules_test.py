@@ -161,6 +161,19 @@ def test_setup_order_and_step_diagnostics_keep_their_order(
 @pytest.mark.parametrize(
     ("updates", "expected"),
     [
+        pytest.param(
+            {"uses": PINNED_SETUP}, [], id="full-sha-pin"
+        ),
+        pytest.param(
+            {"uses": f"{SETUP_ACTION}@main"},
+            ["must use a full-SHA pin"],
+            id="mutable-ref",
+        ),
+        pytest.param(
+            {"uses": f"{SETUP_ACTION}@abcdef"},
+            ["must use a full-SHA pin"],
+            id="short-ref",
+        ),
         pytest.param({}, [], id="missing-continue-on-error-is-valid"),
         pytest.param({"continue-on-error": False}, [], id="literal-false-is-valid"),
         pytest.param(
@@ -185,10 +198,10 @@ def test_setup_order_and_step_diagnostics_keep_their_order(
         ),
     ],
 )
-def test_setup_condition_and_soft_failure_semantics(
+def test_setup_binding_and_pin_semantics(
     updates: dict[str, object], expected: list[str]
 ) -> None:
-    """Any if key is conditional; only absent or literal false is binding."""
+    """Setup pins and conditional flags retain their distinct dispositions."""
     setup = _valid_setup_step()
     setup.update(updates)
     _, problems = _rule_setup_result([
@@ -198,32 +211,6 @@ def test_setup_condition_and_soft_failure_semantics(
     ])
 
     expected_messages = [f"synthetic.yml setup-rust {message}" for message in expected]
-    assert problems == expected_messages, problems
-
-
-@pytest.mark.parametrize(
-    ("uses", "expected"),
-    [
-        pytest.param(PINNED_SETUP, [], id="full-sha-pin"),
-        pytest.param(
-            f"{SETUP_ACTION}@main", ["must use a full-SHA pin"], id="mutable-ref"
-        ),
-        pytest.param(
-            f"{SETUP_ACTION}@abcdef", ["must use a full-SHA pin"], id="short-ref"
-        ),
-    ],
-)
-def test_setup_requires_a_full_sha_pin(uses: str, expected: list[str]) -> None:
-    """A full-length hexadecimal ref is accepted without fixing its value."""
-    setup = _valid_setup_step()
-    setup["uses"] = uses
-    _, problems = _rule_setup_result([
-        setup,
-        {"run": "make install-build-tools"},
-        _coverage_action_step(),
-    ])
-
-    expected_messages = [f"synthetic.yml setup-rust {item}" for item in expected]
     assert problems == expected_messages, problems
 
 
