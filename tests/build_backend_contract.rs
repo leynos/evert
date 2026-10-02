@@ -62,6 +62,18 @@ fn has_encoded_rustflags_binding(workflow: &str) -> bool {
 /// Recognizes a stable release command after both Cargo flag sources have
 /// been cleared or replaced, with no development-only flag passed directly.
 fn stable_release_is_isolated(route: &str) -> bool {
+    unique_stable_release_command(route)
+        .as_deref()
+        .is_some_and(|command| release_command_is_isolated(route, command))
+}
+
+/// Returns the normalized release command only when the route has exactly one.
+///
+/// ```text
+/// unique_stable_release_command("cross +stable build --release") -> Some(..)
+/// unique_stable_release_command("cross build --release\\ncross build --release") -> None
+/// ```
+fn unique_stable_release_command(route: &str) -> Option<String> {
     let mut release_command = None;
     for line in route.lines() {
         let normalized = line.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -69,14 +81,20 @@ fn stable_release_is_isolated(route: &str) -> bool {
             continue;
         }
         if release_command.is_some() {
-            return false;
+            return None;
         }
         release_command = Some(normalized);
     }
-    let Some(command) = release_command.as_deref() else {
-        return false;
-    };
+    release_command
+}
 
+/// Checks the standard flag policy for one already-selected release command.
+///
+/// ```text
+/// release_command_is_isolated("", "env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=\"\" cross +stable build --release") -> true
+/// release_command_is_isolated("", "cross +stable build --release") -> false
+/// ```
+fn release_command_is_isolated(route: &str, command: &str) -> bool {
     let replaces_rustflags = command.contains("RUSTFLAGS=\"\"")
         || command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }\"")
         || route.lines().any(|line| line.trim() == "RUSTFLAGS: \"\"");

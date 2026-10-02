@@ -283,6 +283,31 @@ reading and workflow-shape access. Keep build, coverage, and route assertions
 in their corresponding `*_rules.py` modules; do not extend the helper with
 another copy of shared CV-005 policy.
 
+### Workflow contract helper boundaries
+
+Keep workflow-shape access in `workflow_contract_support.py`: only
+`read_workflows` calls `_read_workflow`, and only `steps` calls
+`_iter_job_steps`. Policy checks stay in their `*_rules.py` consumers.
+Cargo-output parsing stays in `cargo_selection_test.py`; only
+`_evert_rustc_command` composes `_cargo_running_tokens` and
+`_evert_rustc_arguments`.
+
+In `whitaker_provisioning_rules.py`, only `make_lint_step_status` calls
+`_make_invocation_arguments`, and only `lint_job_action_violations` calls
+`_action_order_violations`. In `build_tools_rules.py`, keep `_setup_commands`,
+`_install_order_problem`, `_wrapper_step_problems`, `_optional_text`, and
+`_local_workflow_problem` private to their respective mutation, wrapper,
+suite-step, and reusable-workflow policy paths; other workflow-policy modules
+must not import them.
+
+Keep matrix-value and runner-status helpers in `build_tools_runner.py`, where
+they compose the module's matrix readers and callers. Provisioning requirements
+and diagnostics remain in their existing consumers. In
+`coverage_toolchain_rules.py`, only `_setup` calls `_setup_order_problems` and
+`_setup_step_problems`. If release-command checks move to
+`supported_route_command_rules.py`, keep its helper private there and permit
+only `_release_command_errors` to call it.
+
 Within that module, the private `_construct_workflow_yaml` helper owns the
 single-document `SafeLoader` lifecycle, duplicate-key validation, and document
 construction. `load_workflow` is its only permitted caller and owns the
@@ -340,6 +365,17 @@ on Linux, and the `setup-rust` steps of the CI workflows (each must pass
 The text readers take fixture input and never start Make. The separate
 `make_execution` adapter is reserved for repository integration checks that
 must inspect the real target expansions.
+
+Keep build-contract readers within their owning test modules. In
+`build_standard_support/config.rs`, `Pin` owns channel parsing and calls only
+its private channel-classification helpers. Make-output folding and Cargo
+command recognition stay in `makefile_contract.rs`; stable release-command
+discovery and flag-policy checks stay in `build_backend_contract.rs`. Shell
+wrapper and quoted `RUSTFLAGS` parsing remain in
+`build_standard_support/make.rs`. Keep the parameterized cross-route
+linker-argument regression with its caller-flag contract in
+`makefile_contract_support/cross_caller_flags.rs`. These readers and regression
+cases are module-local; do not make them shared cross-module helpers.
 
 ### Backend support
 

@@ -81,31 +81,9 @@ impl Pin {
     pub fn read(toolchain: &str) -> Result<Self, PinError> {
         let mut channels = Vec::new();
         for line in toolchain.lines().map(str::trim) {
-            let Some((key, assignment_value)) = line.split_once('=') else {
-                continue;
-            };
-            if key.trim() != "channel" {
-                continue;
+            if let Some(channel) = channel_assignment(line)? {
+                channels.push(channel);
             }
-            let value = assignment_value.trim();
-            let Some(quote) = value
-                .chars()
-                .next()
-                .filter(|quote| matches!(quote, '\'' | '"'))
-            else {
-                return Err(PinError::MalformedChannel);
-            };
-            let Some(after_opening_quote) = value.strip_prefix(quote) else {
-                return Err(PinError::MalformedChannel);
-            };
-            let Some((channel, trailing_text)) = after_opening_quote.split_once(quote) else {
-                return Err(PinError::MalformedChannel);
-            };
-            let comment_suffix = trailing_text.trim();
-            if !comment_suffix.is_empty() && !comment_suffix.starts_with('#') {
-                return Err(PinError::MalformedChannel);
-            }
-            channels.push(channel);
         }
         match channels.as_slice() {
             [] => Err(PinError::MissingChannel),
@@ -116,28 +94,11 @@ impl Pin {
 
     /// Classifies one channel name.
     fn classify(channel: &str) -> Result<Self, PinError> {
-        let is_date_component = |part: &str, width: usize| {
-            part.len() == width && part.bytes().all(|byte| byte.is_ascii_digit())
-        };
-        let is_dated_nightly = channel.strip_prefix("nightly-").is_some_and(|date| {
-            let mut parts = date.split('-');
-            matches!(
-                (parts.next(), parts.next(), parts.next(), parts.next()),
-                (Some(year), Some(month), Some(day), None)
-                    if is_date_component(year, 4)
-                        && [month, day]
-                            .into_iter()
-                            .all(|part| is_date_component(part, 2))
-            )
-        });
+        let is_dated_nightly = dated_nightly(channel);
         let is_nightly = channel == "nightly" || is_dated_nightly;
-        let is_release = channel.split('.').count() >= 2
-            && channel
-                .split('.')
-                .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()));
         if is_nightly {
             Ok(Self::Nightly)
-        } else if is_release || matches!(channel, "stable" | "beta") {
+        } else if is_numbered_release(channel) || matches!(channel, "stable" | "beta") {
             Ok(Self::Stable)
         } else {
             Err(PinError::UnsupportedChannel(channel.to_owned()))
@@ -146,6 +107,71 @@ impl Pin {
 
     /// Returns whether the pin takes `-Zthreads`, which is a nightly flag.
     pub const fn takes_threads(self) -> bool { matches!(self, Self::Nightly) }
+}
+
+/// Reads the exact `channel` key; `channel_assignment("channel = \"nightly\"")`
+/// returns `Ok(Some("nightly"))`, while a `default-channel` key returns `Ok(None)`.
+///
+/// # Errors
+///
+/// Returns `MalformedChannel` when the exact key is not a quoted string.
+fn channel_assignment(line: &str) -> Result<Option<&str>, PinError> {
+    let Some((key, assignment_value)) = line.split_once('=') else {
+        return Ok(None);
+    };
+    if key.trim() != "channel" {
+        return Ok(None);
+    }
+    let value = assignment_value.trim();
+    let Some(quote) = value
+        .chars()
+        .next()
+        .filter(|quote| matches!(quote, '\'' | '"'))
+    else {
+        return Err(PinError::MalformedChannel);
+    };
+    let Some(after_opening_quote) = value.strip_prefix(quote) else {
+        return Err(PinError::MalformedChannel);
+    };
+    let Some((channel, trailing_text)) = after_opening_quote.split_once(quote) else {
+        return Err(PinError::MalformedChannel);
+    };
+    let comment_suffix = trailing_text.trim();
+    if !comment_suffix.is_empty() && !comment_suffix.starts_with('#') {
+        return Err(PinError::MalformedChannel);
+    }
+    Ok(Some(channel))
+}
+
+/// Matches exact-width ASCII numbers; `is_date_component("2026", 4)` is true,
+/// while `is_date_component("26", 4)` is false.
+fn is_date_component(part: &str, width: usize) -> bool {
+    part.len() == width && part.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// Recognizes dated nightlies by component width; `dated_nightly("nightly-2026-05-28")`
+/// is true, while `dated_nightly("nightly-2026-5-28")` is false.
+fn dated_nightly(channel: &str) -> bool {
+    channel.strip_prefix("nightly-").is_some_and(|date| {
+        let mut parts = date.split('-');
+        matches!(
+            (parts.next(), parts.next(), parts.next(), parts.next()),
+            (Some(year), Some(month), Some(day), None)
+                if is_date_component(year, 4)
+                    && [month, day]
+                        .into_iter()
+                        .all(|part| is_date_component(part, 2))
+        )
+    })
+}
+
+/// Recognizes dotted numeric releases; `is_numbered_release("1.94.0")` is
+/// true, while `is_numbered_release("1..0")` is false.
+fn is_numbered_release(channel: &str) -> bool {
+    channel.split('.').count() >= 2
+        && channel
+            .split('.')
+            .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// A list of compiler flags, with `-C value` pairs joined into `-Cvalue` so

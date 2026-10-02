@@ -77,28 +77,61 @@ pub enum Assignment {
 /// Returns the reason when an assignment is unreadable or glues inherited
 /// flags to the following flag.
 pub fn assigned_rustflags(line: &str) -> Result<Assignment, String> {
-    if line.contains("make_flags=$1") || line.contains("effective_flags=") {
-        let expected_flags = "effective_flags=\"${RUSTFLAGS:+$RUSTFLAGS }$make_flags\"";
-        let expected_assignment =
-            "exec env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=\"$effective_flags\" \"$@\"";
-        if !line.contains(expected_flags) || !line.contains(expected_assignment) {
-            return Err(format!("unreadable shell RUSTFLAGS wrapper in `{line}`"));
-        }
-        let Some((_, arguments)) = line.split_once("' _ '") else {
-            return Err(format!(
-                "shell RUSTFLAGS wrapper has no make_flags argument in `{line}`"
-            ));
-        };
-        let Some((make_flags, _)) = arguments.split_once('\'') else {
-            return Err(format!(
-                "shell RUSTFLAGS wrapper has an unreadable make_flags argument in `{line}`"
-            ));
-        };
-        return Ok(Assignment::Flags(
-            Flags::from_words(make_flags.split_whitespace()),
-            true,
-        ));
+    if let Some(assignment) = shell_wrapper_assignment(line)? {
+        return Ok(assignment);
     }
+    quoted_rustflags_assignment(line)
+}
+
+/// Reads the Make shell wrapper's assignment when the wrapper markers occur.
+///
+/// ```text
+/// shell_wrapper_assignment("effective_flags=\"${RUSTFLAGS:+$RUSTFLAGS }$make_flags\"") -> Err(..)
+/// shell_wrapper_assignment("cargo test") -> Ok(None)
+/// ```
+///
+/// # Errors
+///
+/// Returns the reason when a marked shell wrapper does not preserve the expected
+/// inherited-flags transport or does not expose its argument.
+fn shell_wrapper_assignment(line: &str) -> Result<Option<Assignment>, String> {
+    if !line.contains("make_flags=$1") && !line.contains("effective_flags=") {
+        return Ok(None);
+    }
+    let expected_flags = "effective_flags=\"${RUSTFLAGS:+$RUSTFLAGS }$make_flags\"";
+    let expected_assignment =
+        "exec env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=\"$effective_flags\" \"$@\"";
+    if !line.contains(expected_flags) || !line.contains(expected_assignment) {
+        return Err(format!("unreadable shell RUSTFLAGS wrapper in `{line}`"));
+    }
+    let Some((_, arguments)) = line.split_once("' _ '") else {
+        return Err(format!(
+            "shell RUSTFLAGS wrapper has no make_flags argument in `{line}`"
+        ));
+    };
+    let Some((make_flags, _)) = arguments.split_once('\'') else {
+        return Err(format!(
+            "shell RUSTFLAGS wrapper has an unreadable make_flags argument in `{line}`"
+        ));
+    };
+    Ok(Some(Assignment::Flags(
+        Flags::from_words(make_flags.split_whitespace()),
+        true,
+    )))
+}
+
+/// Reads a conventional quoted `RUSTFLAGS` assignment or reports its defect.
+///
+/// ```text
+/// quoted_rustflags_assignment("RUSTFLAGS=\"-Zthreads=8\" cargo test") -> Flags(..)
+/// quoted_rustflags_assignment("cargo test") -> Unassigned
+/// ```
+///
+/// # Errors
+///
+/// Returns the reason when an assignment is unreadable or glues inherited
+/// flags to the following flag.
+fn quoted_rustflags_assignment(line: &str) -> Result<Assignment, String> {
     let Some((_, rest)) = line.split_once("RUSTFLAGS=\"") else {
         if line.contains("RUSTFLAGS=") {
             return Err(format!("unreadable RUSTFLAGS assignment in `{line}`"));

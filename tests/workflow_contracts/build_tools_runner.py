@@ -43,11 +43,8 @@ def _scalar_runner_status(runs_on: str, job: dict[str, object]) -> bool | None:
     matrix_match = MATRIX_EXPRESSION.fullmatch(runs_on)
     if matrix_match is None:
         return _runner_value_status_for_job(runs_on, job)
-    values = _matrix_values(job, matrix_match.group(1))
-    if values is None:
-        return None
-    statuses = [_runner_value_status(value) for value in values]
-    if any(status is None for status in statuses):
+    statuses = _matrix_runner_statuses(job, matrix_match.group(1))
+    if statuses is None:
         return None
     return any(statuses)
 
@@ -70,22 +67,87 @@ def _matrix_values(job: dict[str, object], key: str) -> list[object] | None:
     matrix = strategy.get("matrix") if isinstance(strategy, dict) else None
     if not isinstance(matrix, dict):
         return None
-    values = matrix.get(key)
-    found: list[object]
-    match values:
-        case [_, *_]:
-            found = list(values)
-        case str() | int() | float() | bool():
-            found = [values]
-        case _:
-            found = []
-    includes = matrix.get("include", [])
-    if not isinstance(includes, list) or not all(
-        isinstance(row, dict) for row in includes
-    ):
+    found = _matrix_axis_values(matrix.get(key))
+    includes = _matrix_include_values(matrix.get("include", []), key)
+    if includes is None:
         return None
-    found.extend(row[key] for row in includes if key in row)
+    found.extend(includes)
     return found or None
+
+
+def _matrix_axis_values(value: object) -> list[object]:
+    """Copy supported matrix-axis values into a normalized list.
+
+    Returns
+    -------
+    list[object]
+        A fresh list for supported values, or an empty list otherwise.
+
+    Examples
+    --------
+    >>> _matrix_axis_values(["ubuntu", "windows"])
+    ['ubuntu', 'windows']
+    >>> _matrix_axis_values("ubuntu")
+    ['ubuntu']
+    >>> _matrix_axis_values([])
+    []
+    """
+    match value:
+        case [_, *_]:
+            return list(value)
+        case str() | int() | float() | bool():
+            return [value]
+        case _:
+            return []
+
+
+def _matrix_include_values(value: object, key: str) -> list[object] | None:
+    """Validate include rows and select values for one matrix axis.
+
+    Returns
+    -------
+    list[object] | None
+        Selected values, or ``None`` when include data is malformed.
+
+    Examples
+    --------
+    >>> _matrix_include_values([{"os": "ubuntu"}], "os")
+    ['ubuntu']
+    >>> _matrix_include_values([{"arch": "x64"}], "os")
+    []
+    >>> _matrix_include_values([None], "os") is None
+    True
+    """
+    if not isinstance(value, list) or not all(isinstance(row, dict) for row in value):
+        return None
+    rows = typ.cast("list[dict[str, object]]", value)
+    return [row[key] for row in rows if key in row]
+
+
+def _matrix_runner_statuses(job: dict[str, object], key: str) -> list[bool] | None:
+    """Resolve one matrix key and reject any unclassifiable runner value.
+
+    Returns
+    -------
+    list[bool] | None
+        Known Linux statuses in matrix order, or ``None`` if any value is
+        unknown or the matrix cannot be resolved.
+
+    Examples
+    --------
+    >>> _matrix_runner_statuses(
+    ...     {"strategy": {"matrix": {"os": ["ubuntu-latest", "windows-latest"]}}},
+    ...     "os",
+    ... )
+    [True, False]
+    """
+    values = _matrix_values(job, key)
+    if values is None:
+        return None
+    statuses = [_runner_value_status(value) for value in values]
+    if any(status is None for status in statuses):
+        return None
+    return typ.cast("list[bool]", statuses)
 
 
 def _runner_label_set_status(
@@ -111,11 +173,8 @@ def _runner_value_status_for_job(value: object, job: dict[str, object]) -> bool 
     matrix_match = MATRIX_EXPRESSION.fullmatch(value)
     if matrix_match is None:
         return _runner_value_status(value)
-    values = _matrix_values(job, matrix_match.group(1))
-    if values is None:
-        return None
-    statuses = [_runner_value_status(item) for item in values]
-    if any(status is None for status in statuses) or len(set(statuses)) != 1:
+    statuses = _matrix_runner_statuses(job, matrix_match.group(1))
+    if statuses is None or len(set(statuses)) != 1:
         return None
     return statuses[0]
 

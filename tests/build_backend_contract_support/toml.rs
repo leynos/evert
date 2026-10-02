@@ -8,15 +8,29 @@ pub(super) fn strip_toml_comment(line: &str) -> &str {
         if character == '#' && quote.is_none() {
             return line.get(..index).unwrap_or(line);
         }
-        match (quote, escaped, character) {
-            (Some('"'), true, _) => escaped = false,
-            (Some('"'), false, '\\') => escaped = true,
-            (Some(delimiter), _, current) if delimiter == current => quote = None,
-            (None, _, '"' | '\'') => quote = Some(character),
-            _ => {}
-        }
+        (quote, escaped) = advance_quoted_state(quote, escaped, character);
     }
     line
+}
+
+/// Advances the quote and escape state for one TOML character.
+///
+/// ```text
+/// advance_quoted_state(None, false, '"') -> (Some('"'), false)
+/// advance_quoted_state(Some('"'), false, '\\') -> (Some('"'), true)
+/// ```
+const fn advance_quoted_state(
+    quote: Option<char>,
+    escaped: bool,
+    character: char,
+) -> (Option<char>, bool) {
+    match (quote, escaped, character) {
+        (Some('"'), true, _) => (quote, false),
+        (Some('"'), false, '\\') => (quote, true),
+        (Some(delimiter), _, current) if delimiter == current => (None, false),
+        (None, _, '"' | '\'') => (Some(character), false),
+        _ => (quote, escaped),
+    }
 }
 
 /// Splits a TOML configuration into named table bodies, excluding comments.
@@ -26,13 +40,7 @@ pub(super) fn table_bodies(config: &str) -> Vec<(String, String)> {
     let mut tables = Vec::new();
     for raw_line in config.lines() {
         let line = strip_toml_comment(raw_line).trim();
-        if line.starts_with('[') && line.ends_with(']') {
-            let Some(table_name) = line
-                .strip_prefix('[')
-                .and_then(|header| header.strip_suffix(']'))
-            else {
-                continue;
-            };
+        if let Some(table_name) = table_header(line) {
             if let Some(table) = current_table.replace(table_name.to_owned()) {
                 tables.push((table, std::mem::take(&mut current_body)));
             }
@@ -46,6 +54,14 @@ pub(super) fn table_bodies(config: &str) -> Vec<(String, String)> {
     }
     tables
 }
+
+/// Returns the untrimmed name inside a single-bracket TOML table header.
+///
+/// ```text
+/// table_header("[build]") -> Some("build")
+/// table_header("[[bin]]") -> Some("[bin]")
+/// ```
+fn table_header(line: &str) -> Option<&str> { line.strip_prefix('[')?.strip_suffix(']') }
 
 /// Returns the body of a TOML table when it declares `rustflags`.
 fn rustflags_body(config: &str, table: &str) -> Option<String> {

@@ -12,10 +12,12 @@ import pytest
 import workflow_contract_support as workflow_support
 import yaml
 from workflow_contract_support import (
+    Document,
     WorkflowError,
     load_workflow,
     mapping_at,
     sequence_at,
+    steps,
 )
 
 if typ.TYPE_CHECKING:
@@ -34,11 +36,11 @@ def test_mapping_at_returns_the_live_mapping() -> None:
 
 def test_sequence_at_returns_the_live_list() -> None:
     """Appending to the result appends to the document."""
-    steps = sequence_at(DOCUMENT, "jobs", "build", "steps")
+    step_list = sequence_at(DOCUMENT, "jobs", "build", "steps")
     before = len(DOCUMENT["jobs"]["build"]["steps"])
-    steps.append({"run": "extra"})
+    step_list.append({"run": "extra"})
     after = len(DOCUMENT["jobs"]["build"]["steps"])
-    steps.pop()
+    step_list.pop()
     assert after == before + 1, "result was a copy"
 
 
@@ -105,9 +107,7 @@ def test_load_workflow_constructs_mappings(
 )
 def test_workflow_without_a_yaml_node_is_rejected(source: str) -> None:
     """Empty streams keep the filename-prefixed root diagnostic."""
-    with pytest.raises(
-        WorkflowError, match=r"ci\.yml: a workflow must be a mapping"
-    ):
+    with pytest.raises(WorkflowError, match=r"ci\.yml: a workflow must be a mapping"):
         load_workflow("ci.yml", source)
 
 
@@ -121,9 +121,7 @@ def test_workflow_without_a_yaml_node_is_rejected(source: str) -> None:
 )
 def test_non_mapping_workflow_roots_are_rejected(source: str) -> None:
     """Scalar, sequence, and null roots share the existing shape error."""
-    with pytest.raises(
-        WorkflowError, match=r"ci\.yml: a workflow must be a mapping"
-    ):
+    with pytest.raises(WorkflowError, match=r"ci\.yml: a workflow must be a mapping"):
         load_workflow("ci.yml", source)
 
 
@@ -131,17 +129,13 @@ def test_non_mapping_workflow_roots_are_rejected(source: str) -> None:
     "source",
     [
         pytest.param("jobs: [\n", id="invalid-syntax"),
-        pytest.param(
-            "---\njobs: {}\n---\nother: {}\n", id="multiple-documents"
-        ),
+        pytest.param("---\njobs: {}\n---\nother: {}\n", id="multiple-documents"),
         pytest.param("!unsupported value\n", id="unsupported-tag"),
     ],
 )
 def test_yaml_parser_errors_keep_the_filename_and_cause(source: str) -> None:
     """Parser failures retain safe-loader errors as their chained cause."""
-    with pytest.raises(
-        WorkflowError, match=r"ci\.yml: not valid YAML:"
-    ) as failure:
+    with pytest.raises(WorkflowError, match=r"ci\.yml: not valid YAML:") as failure:
         load_workflow("ci.yml", source)
 
     assert isinstance(failure.value.__cause__, yaml.YAMLError), (
@@ -165,9 +159,7 @@ def test_yaml_parser_errors_keep_the_filename_and_cause(source: str) -> None:
 )
 def test_duplicate_keys_keep_the_filename_and_cause(source: str) -> None:
     """Duplicate keys are rejected before PyYAML folds mappings into dicts."""
-    with pytest.raises(
-        WorkflowError, match=r"ci\.yml: duplicate key"
-    ) as failure:
+    with pytest.raises(WorkflowError, match=r"ci\.yml: duplicate key") as failure:
         load_workflow("ci.yml", source)
 
     cause = failure.value.__cause__
@@ -228,3 +220,98 @@ def test_safe_loader_is_disposed_once(
             load_workflow("ci.yml", source)
 
     assert len(disposed_loaders) == 1, "SafeLoader must be disposed exactly once"
+
+
+@pytest.mark.parametrize(
+    "job",
+    [
+        pytest.param({}, id="missing-steps"),
+        pytest.param({"steps": []}, id="empty-steps"),
+    ],
+)
+def test_missing_or_empty_job_steps_yield_nothing(job: dict[str, object]) -> None:
+    """Jobs without steps and jobs with an empty list both yield no steps."""
+    assert not list(steps("ci.yml", {"jobs": {"build": job}})), (
+        "unexpected steps were yielded"
+    )
+
+
+@pytest.mark.parametrize(
+    "invalid_steps",
+    [
+        pytest.param(None, id="null"),
+        pytest.param({"run": "make"}, id="mapping"),
+        pytest.param("make", id="string"),
+        pytest.param(3, id="integer"),
+    ],
+)
+def test_non_list_job_steps_name_the_workflow(
+    invalid_steps: object,
+) -> None:
+    """A non-list steps value raises the filename-prefixed shape error."""
+    document: Document = {"jobs": {"build": {"steps": invalid_steps}}}
+    with pytest.raises(
+        WorkflowError, match=r"ci\.yml: a job's `steps` must be a list"
+    ) as failure:
+        list(steps("ci.yml", document))
+
+    assert failure.value.__cause__ is None, "shape error gained a cause"
+
+
+def test_non_mapping_job_step_names_the_workflow() -> None:
+    """A list member that is not a mapping raises the existing diagnostic."""
+    with pytest.raises(
+        WorkflowError, match=r"ci\.yml: a step must be a mapping"
+    ) as failure:
+        list(steps("ci.yml", {"jobs": {"build": {"steps": ["make"]}}}))
+
+    assert failure.value.__cause__ is None, "shape error gained a cause"
+
+
+def test_steps_preserve_job_order_step_order_and_identity() -> None:
+    """The generator yields each original mapping in document order."""
+    first = {"run": "first"}
+    second = {"run": "second"}
+    third = {"run": "third"}
+    yielded = list(
+        steps(
+            "ci.yml",
+            {
+                "jobs": {
+                    "one": {"steps": [first, second]},
+                    "two": {"steps": [third]},
+                }
+            },
+        )
+    )
+
+    expected = (first, second, third)
+    assert len(yielded) == len(expected), "not every step was yielded"
+    assert all(
+        actual is original for actual, original in zip(yielded, expected, strict=True)
+    ), "step order or identity changed"
+
+
+def test_a_later_bad_step_fails_only_after_the_first_step_is_yielded() -> None:
+    """Step validation stays lazy at each yield boundary."""
+    first = {"run": "make"}
+    iterator = steps("ci.yml", {"jobs": {"build": {"steps": [first, None]}}})
+
+    assert next(iterator) is first, "valid first step was not yielded"
+    with pytest.raises(WorkflowError, match="a step must be a mapping"):
+        next(iterator)
+
+
+def test_invalid_job_body_fails_before_any_step_is_yielded() -> None:
+    """Job mappings are checked before the step generator starts yielding."""
+    first = {"run": "make"}
+    iterator = steps(
+        "ci.yml",
+        {"jobs": {"valid": {"steps": [first]}, "invalid": "not a mapping"}},
+    )
+
+    with pytest.raises(
+        WorkflowError,
+        match=r"ci\.yml: `jobs` must map job names to mappings",
+    ):
+        next(iterator)

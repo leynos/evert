@@ -31,6 +31,28 @@ def _setup(
     if len(found) != 1:
         return None, [f"{name} coverage needs one setup-rust step"]
     setup = found[0]
+    problems = _setup_order_problems(name, held, setup, coverage)
+    problems.extend(_setup_step_problems(name, setup))
+    return setup, problems
+
+
+def _setup_order_problems(
+    name: str, held: list[Step], setup: Step, coverage: Step
+) -> list[str]:
+    """Report setup ordering errors before coverage and build-tool installation.
+
+    Returns
+    -------
+    list[str]
+        Ordering diagnostics in coverage-then-installer order.
+
+    Examples
+    --------
+    >>> setup = {"uses": "setup-rust"}
+    >>> coverage = {"uses": "generate-coverage"}
+    >>> _setup_order_problems("ci.yml", [setup, coverage], setup, coverage)
+    ['ci.yml coverage needs one `make install-build-tools` step']
+    """
     problems = []
     if held.index(setup) > held.index(coverage):
         problems.append(f"{name} setup-rust must precede coverage")
@@ -41,6 +63,26 @@ def _setup(
         problems.append(f"{name} coverage needs one `make install-build-tools` step")
     elif held.index(setup) > held.index(installers[0]):
         problems.append(f"{name} setup-rust must precede build-tool installation")
+    return problems
+
+
+def _setup_step_problems(name: str, setup: Step) -> list[str]:
+    """Report conditional, mutable-pin, and linker-input setup violations.
+
+    Returns
+    -------
+    list[str]
+        Applicable setup-step diagnostics in their original order.
+
+    Examples
+    --------
+    >>> _setup_step_problems("ci.yml", {"uses": "setup-rust@main"})
+    [
+    ...     'ci.yml setup-rust must use a full-SHA pin',
+    ...     'ci.yml setup-rust must install pinned linker',
+    ... ]
+    """
+    problems = []
     if "if" in setup or continues_on_error(setup):
         problems.append(f"{name} setup-rust must be unconditional and binding")
     if not FULL_SHA.search(str(setup.get("uses", ""))):
@@ -48,7 +90,7 @@ def _setup(
     inputs = setup.get("with")
     if not isinstance(inputs, dict) or inputs.get("install-mold") != "true":
         problems.append(f"{name} setup-rust must install pinned linker")
-    return setup, problems
+    return problems
 
 
 def toolchain_violations(

@@ -178,8 +178,8 @@ def make_lint_step_status(run: str) -> bool | None:
         return None if re.search(r"\bmake\b", run) else False
     found_lint = False
     unresolved = False
-    for invocation in re.finditer(r"\bmake\b([^\n;&|]*)", run.replace("\\\n", " ")):
-        target, is_unresolved = _parse_make_arguments(invocation.group(1).split())
+    for arguments in _make_invocation_arguments(run):
+        target, is_unresolved = _parse_make_arguments(arguments)
         # Once any invocation is unresolvable, later ones are not trusted either.
         unresolved = unresolved or is_unresolved
         if unresolved:
@@ -190,6 +190,28 @@ def make_lint_step_status(run: str) -> bool | None:
     if found_lint:
         return True
     return None if unresolved else False
+
+
+def _make_invocation_arguments(run: str) -> list[list[str]]:
+    r"""Extract whitespace-split arguments from each shell-like Make call.
+
+    Returns
+    -------
+    list[list[str]]
+        Whitespace-split arguments for each Make invocation in source order.
+
+    Examples
+    --------
+    >>> _make_invocation_arguments("make lint && make typecheck")
+    [['lint'], ['typecheck']]
+    >>> _make_invocation_arguments("printf 'no make here'\n")
+    []
+    """
+    folded = run.replace("\\\n", " ")
+    return [
+        invocation.group(1).split()
+        for invocation in re.finditer(r"\bmake\b([^\n;&|]*)", folded)
+    ]
 
 
 def _is_step_list(raw_steps: object) -> bool:
@@ -303,11 +325,48 @@ def lint_job_action_violations(
         violations.extend(_action_step_violations(where, action_step))
     for index in lint_indices:
         violations.extend(_lint_step_violations(where, job_steps[index]))
-    if len(actions) == 1 and lint_indices:
-        action_index = job_steps.index(actions[0])
-        if action_index >= min(lint_indices):
-            violations.append(f"{where} Whitaker action must run before {route_name}")
+    violations.extend(
+        _action_order_violations(
+            where,
+            _ActionOrderContext(job_steps, actions, lint_indices, route_name),
+        )
+    )
     return violations
+
+
+class _ActionOrderContext(typ.NamedTuple):
+    """Keep the step-order inputs together at their private call boundary."""
+
+    job_steps: list[Step]
+    actions: list[Step]
+    lint_indices: list[int]
+    route_name: str
+
+
+def _action_order_violations(where: str, context: _ActionOrderContext) -> list[str]:
+    """Require the sole action to precede the first lint-path step.
+
+    Returns
+    -------
+    list[str]
+        The ordering diagnostic when exactly one action is at or after lint.
+
+    Examples
+    --------
+    >>> _action_order_violations(
+    ...     "ci.yml", _ActionOrderContext([{}, {}], [{}], [0], "make lint")
+    ... )
+    ['ci.yml Whitaker action must run before make lint']
+    >>> _action_order_violations(
+    ...     "ci.yml", _ActionOrderContext([{}], [], [0], "make lint")
+    ... )
+    []
+    """
+    if len(context.actions) == 1 and context.lint_indices:
+        action_index = context.job_steps.index(context.actions[0])
+        if action_index >= min(context.lint_indices):
+            return [f"{where} Whitaker action must run before {context.route_name}"]
+    return []
 
 
 def direct_setup_violations(documents: dict[str, Document]) -> list[str]:

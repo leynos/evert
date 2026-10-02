@@ -163,10 +163,33 @@ fn cross_route_preserves_single_quotes_and_shell_metacharacters() {
     );
 }
 
-/// Allows a directory name containing `mold` when the linker basename is benign.
-#[test]
-fn cross_route_allows_linker_path_and_preserves_cargo_argv() {
-    let make_flags = "-Clinker=/opt/moldings/clang";
+/// Allows benign linker arguments without changing Cargo argument transport.
+#[rstest]
+#[case::benign_directory_name(
+    "-Clinker=/opt/moldings/clang",
+    concat!(
+        "flags=-D warnings -Clinker=/opt/moldings/clang\n",
+        "arg=probe-cargo\n",
+        "arg=check\n",
+        "arg=--all-targets\n",
+        "arg=--all-features"
+    )
+)]
+#[case::benign_linker_symbol(
+    concat!("-Clink-arg=-Wl,--undefined=m", "old_init"),
+    concat!(
+        "flags=-D warnings -Clink-arg=-Wl,--undefined=m",
+        "old_init\n",
+        "arg=probe-cargo\n",
+        "arg=check\n",
+        "arg=--all-targets\n",
+        "arg=--all-features"
+    )
+)]
+fn cross_route_allows_benign_linker_arguments_and_preserves_cargo_argv(
+    #[case] make_flags: &str,
+    #[case] expected_stdout: &str,
+) {
     let output = make_cross_route(
         "-D warnings",
         Some(make_flags),
@@ -177,49 +200,13 @@ fn cross_route_allows_linker_path_and_preserves_cargo_argv() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         output.status.success(),
-        "a benign directory name containing `mold` must pass: {stdout}{}",
+        "benign linker flags must pass: {stdout}{}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
         stdout.trim(),
-        concat!(
-            "flags=-D warnings -Clinker=/opt/moldings/clang\n",
-            "arg=probe-cargo\n",
-            "arg=check\n",
-            "arg=--all-targets\n",
-            "arg=--all-features"
-        ),
-        "the benign route must preserve its flags and Cargo argv order"
-    );
-}
-
-/// Allows a linker symbol with a tool-specific name and preserves Cargo arguments.
-#[test]
-fn cross_route_allows_linker_symbol_and_preserves_cargo_argv() {
-    let make_flags = "-Clink-arg=-Wl,--undefined=mold_init";
-    let output = make_cross_route(
-        "-D warnings",
-        Some(make_flags),
-        PRINT_FLAGS_AND_ARGS_CARGO,
-        false,
-    )
-    .expect("controlled Make route must run");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success(),
-        "a linker symbol must pass: {stdout}{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        stdout.trim(),
-        concat!(
-            "flags=-D warnings -Clink-arg=-Wl,--undefined=mold_init\n",
-            "arg=probe-cargo\n",
-            "arg=check\n",
-            "arg=--all-targets\n",
-            "arg=--all-features"
-        ),
-        "the benign route must preserve its flags and Cargo argv order"
+        expected_stdout,
+        "the benign route must preserve flags and Cargo argv order"
     );
 }
 

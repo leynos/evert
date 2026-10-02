@@ -142,13 +142,35 @@ def read_workflows(directory: Path = WORKFLOW_DIRECTORY) -> Workflow:
 
     workflows: Workflow = {}
     for path in paths:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as error:
-            message = f"{path.name}: cannot be read as UTF-8: {error}"
-            raise WorkflowError(message) from error
-        workflows[path.name] = load_workflow(path.name, text)
+        workflows[path.name] = _read_workflow(path)
     return workflows
+
+
+def _read_workflow(path: Path) -> Document:
+    """Read and parse one workflow file, preserving its filename on errors.
+
+    Returns
+    -------
+    Document
+        The freshly parsed workflow document.
+
+    Raises
+    ------
+    WorkflowError
+        If the file cannot be read as UTF-8 or its YAML is invalid.
+
+    Examples
+    --------
+    >>> workflow = _read_workflow(Path("ci.yml"))
+    >>> isinstance(workflow, dict)
+    True
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        message = f"{path.name}: cannot be read as UTF-8: {error}"
+        raise WorkflowError(message) from error
+    return load_workflow(path.name, text)
 
 
 # An alias rather than a wrapper: tests ask for a "fresh" parse by intent, and
@@ -240,15 +262,36 @@ def sequence_at(node: object, *path: str) -> list[object]:
 def steps(name: str, document: Document) -> cabc.Iterator[Step]:
     """Yield validated step mappings in workflow order."""
     for job in jobs(name, document).values():
-        raw_steps = job.get("steps", [])
-        if not isinstance(raw_steps, list):
-            message = f"{name}: a job's `steps` must be a list"
+        yield from _iter_job_steps(name, job)
+
+
+def _iter_job_steps(name: str, job: dict[str, object]) -> cabc.Iterator[Step]:
+    """Validate and yield a job's original steps one at a time.
+
+    Yields
+    ------
+    Step
+        Each original step mapping in its job order.
+
+    Raises
+    ------
+    WorkflowError
+        If `steps` is not a list or an element is not a mapping.
+
+    Examples
+    --------
+    >>> list(_iter_job_steps("ci.yml", {"steps": [{"run": "make"}]}))
+    [{'run': 'make'}]
+    """
+    raw_steps = job.get("steps", [])
+    if not isinstance(raw_steps, list):
+        message = f"{name}: a job's `steps` must be a list"
+        raise WorkflowError(message)
+    for step in raw_steps:
+        if not isinstance(step, dict):
+            message = f"{name}: a step must be a mapping"
             raise WorkflowError(message)
-        for step in raw_steps:
-            if not isinstance(step, dict):
-                message = f"{name}: a step must be a mapping"
-                raise WorkflowError(message)
-            yield typ.cast("Step", step)
+        yield typ.cast("Step", step)
 
 
 def calls(step: Step, action: str) -> bool:

@@ -4,7 +4,8 @@ import os
 import platform
 import shlex
 import tempfile
-from pathlib import Path
+from itertools import pairwise
+from pathlib import Path, PurePosixPath
 
 import pytest
 from command_runner import run_fixed_command
@@ -129,24 +130,187 @@ def _evert_rustc_command(output: str) -> tuple[list[str], str] | None:
     tuple[list[str], str] | None
         The rustc arguments and the rendered Cargo line, or ``None`` when the
         output holds no rustc invocation for `evert`.
+
+    Examples
+    --------
+    >>> _evert_rustc_command("Running `rustc --crate-name evert`")[0]
+    ['--crate-name', 'evert']
     """
     for line in output.splitlines():
-        marker = "Running `"
-        if marker not in line or not line.rstrip().endswith("`"):
+        command = _cargo_running_tokens(line)
+        if command is None:
             continue
-        rendered_command = line.split(marker, maxsplit=1)[1].rstrip()[:-1]
-        try:
-            command = shlex.split(rendered_command)
-        except ValueError:
-            continue
-        for rustc_index, executable in enumerate(command):
-            if Path(executable).name != "rustc":
-                continue
-            arguments = command[rustc_index + 1 :]
-            for index, argument in enumerate(arguments[:-1]):
-                if argument == "--crate-name" and arguments[index + 1] == "evert":
-                    return arguments, line
+        arguments = _evert_rustc_arguments(command)
+        if arguments is not None:
+            return arguments, line
     return None
+
+
+def _cargo_running_tokens(line: str) -> list[str] | None:
+    """Split a Cargo ``Running `...` `` line without starting a process.
+
+    Returns
+    -------
+    list[str] | None
+        Shell tokens, including an empty list for an empty command, or
+        ``None`` when the line is malformed.
+
+    Examples
+    --------
+    >>> _cargo_running_tokens('Running `rustc --crate-name evert`')
+    ['rustc', '--crate-name', 'evert']
+    >>> _cargo_running_tokens('ordinary Cargo output') is None
+    True
+    """
+    marker = "Running `"
+    if marker not in line or not line.rstrip().endswith("`"):
+        return None
+    rendered_command = line.split(marker, maxsplit=1)[1].rstrip()[:-1]
+    try:
+        return shlex.split(rendered_command)
+    except ValueError:
+        return None
+
+
+def _evert_rustc_arguments(command: list[str]) -> list[str] | None:
+    """Return the first rustc suffix containing adjacent Evert crate tokens.
+
+    Returns
+    -------
+    list[str] | None
+        The first matching rustc suffix, or ``None`` when no suffix matches.
+
+    Examples
+    --------
+    >>> _evert_rustc_arguments(['rustc', '--crate-name', 'evert', '--emit', 'metadata'])
+    ['--crate-name', 'evert', '--emit', 'metadata']
+    >>> _evert_rustc_arguments(['rustc', '--crate-name=evert']) is None
+    True
+    """
+    for rustc_index, executable in enumerate(command):
+        if Path(executable).name != "rustc":
+            continue
+        arguments = command[rustc_index + 1 :]
+        if any(
+            first == "--crate-name" and second == "evert"
+            for first, second in pairwise(arguments)
+        ):
+            return arguments
+    return None
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        pytest.param("ordinary output", None, id="unrelated-line"),
+        pytest.param("Running `rustc --crate-name evert", None, id="unclosed-backtick"),
+        pytest.param('Running `rustc --crate-name "evert`', None, id="bad-shell-quote"),
+        pytest.param("Running ``", [], id="empty-running-command"),
+        pytest.param(
+            "prefix Running `echo` Running `rustc --crate-name evert`",
+            ["echo`", "Running", "`rustc", "--crate-name", "evert"],
+            id="split-at-first-marker",
+        ),
+        pytest.param(
+            'Running `"/opt/rust tool/bin/rustc" --crate-name evert '
+            '--out-dir "target/debug build"`',
+            [
+                "/opt/rust tool/bin/rustc",
+                "--crate-name",
+                "evert",
+                "--out-dir",
+                "target/debug build",
+            ],
+            id="quoted-path-and-argument",
+        ),
+    ],
+)
+def test_cargo_running_tokens_preserves_shell_tokenization(
+    line: str, expected: list[str] | None
+) -> None:
+    """The host-independent parser preserves Cargo's marker and shlex rules."""
+    assert _cargo_running_tokens(line) == expected, line
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        pytest.param([], None, id="empty-command"),
+        pytest.param(["rustc", "--emit", "metadata"], None, id="missing-crate-name"),
+        pytest.param(["rustc", "--crate-name"], None, id="trailing-crate-option"),
+        pytest.param(["rustc", "--crate-name", "dependency"], None, id="other-crate"),
+        pytest.param(
+            ["rustc", "--crate-name=evert"], None, id="equals-form-not-accepted"
+        ),
+        pytest.param(
+            ["rustc", "--crate-name", "other", "flag", "evert"],
+            None,
+            id="non-adjacent-pair",
+        ),
+        pytest.param(
+            ["rustc.exe", "--crate-name", "evert"], None, id="windows-executable"
+        ),
+        pytest.param(
+            ["rustc", "--crate-name", "dependency", "--crate-name", "evert", "-v"],
+            ["--crate-name", "dependency", "--crate-name", "evert", "-v"],
+            id="later-crate-name-pair",
+        ),
+        pytest.param(
+            ["rustc", "--help", "/tool/rustc", "--crate-name", "evert"],
+            ["--help", "/tool/rustc", "--crate-name", "evert"],
+            id="first-rustc-suffix-can-match-after-later-rustc",
+        ),
+    ],
+)
+def test_evert_rustc_arguments_matches_adjacent_crate_tokens(
+    command: list[str], expected: list[str] | None
+) -> None:
+    """Only rustc suffixes with adjacent separate crate-name tokens match."""
+    assert _evert_rustc_arguments(command) == expected, command
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        pytest.param("", None, id="empty-output"),
+        pytest.param("unrelated Cargo output\n", None, id="no-running-line"),
+        pytest.param(
+            "Running `rustc --crate-name dependency --emit metadata`\n"
+            f"Running `{PurePosixPath('/', 'usr', 'bin', 'rustc')} "
+            "--crate-name evert --emit link`",
+            (
+                ["--crate-name", "evert", "--emit", "link"],
+                (
+                    f"Running `{PurePosixPath('/', 'usr', 'bin', 'rustc')} "
+                    "--crate-name evert --emit link`"
+                ),
+            ),
+            id="dependency-before-evert",
+        ),
+        pytest.param(
+            "Running `env RUSTC_WRAPPER=cache sccache rustc --crate-name evert -v`",
+            (
+                ["--crate-name", "evert", "-v"],
+                "Running `env RUSTC_WRAPPER=cache sccache rustc --crate-name evert -v`",
+            ),
+            id="environment-and-wrapper-prefix",
+        ),
+        pytest.param(
+            " malformed\n  Running `rustc --crate-name evert`  \n"
+            "Running `rustc --crate-name evert --later`",
+            (
+                ["--crate-name", "evert"],
+                "  Running `rustc --crate-name evert`  ",
+            ),
+            id="malformed-before-first-match-and-original-line",
+        ),
+    ],
+)
+def test_evert_rustc_command_selects_first_parsed_match(
+    output: str, expected: tuple[list[str], str] | None
+) -> None:
+    """Output scanning preserves exact arguments and the first original line."""
+    assert _evert_rustc_command(output) == expected, output
 
 
 @pytest.mark.parametrize(

@@ -19,14 +19,15 @@ WORKFLOW_DIRECTORY: typ.Final[Path] = (
 )
 SETUP_RUST: typ.Final[str] = "leynos/shared-actions/.github/actions/setup-rust"
 _SETUP_RUST_REF_PARTS = ("c4ed5ffaf0", "640b1907d535", "9a87fd167703", "4eec27")
-SETUP_RUST_REF: typ.Final[str] = (
-    f"{SETUP_RUST}@{''.join(_SETUP_RUST_REF_PARTS)}"
-)
+SETUP_RUST_REF: typ.Final[str] = f"{SETUP_RUST}@{''.join(_SETUP_RUST_REF_PARTS)}"
 LINKER_VERSION: typ.Final[str] = "2.41.0"
 MUTATION_WORKFLOW: typ.Final[str] = "mutation-cargo.yml"
 SUITE_COMMAND: typ.Final[re.Pattern[str]] = re.compile(
     r"\b(?:cargo(?:\s+\+\S+)?\s+(?:test\b|nextest\b|llvm-cov\b)|"
     r"make\s+(?:-[A-Za-z][^\s]*\s+)*(?:test(?:-[A-Za-z0-9_-]+)?|coverage)\b)"
+)
+_INSTALL_COMMAND_DIAGNOSTIC: typ.Final[str] = (
+    "setup-commands must run one unconditional make install-build-tools command"
 )
 
 
@@ -137,23 +138,36 @@ def _unresolved_reusable_problem(
     ):
         return None
     if uses.startswith("./.github/workflows/"):
-        path, separator, _reference = uses.partition("@")
-        if separator:
-            return "calls a local workflow at an uninspectable external ref"
-        workflow_name = PurePosixPath(path).name
-        if workflow_name not in documents:
-            return "calls an unreadable local workflow"
-        return "calls a local reusable workflow whose suite paths are not checked"
+        return _local_workflow_problem(uses, documents)
     return "calls an external reusable workflow whose suite runner cannot be inspected"
+
+
+def _local_workflow_problem(uses: str, documents: dict[str, Document]) -> str:
+    """Describe why a local reusable workflow cannot be inspected here.
+
+    Returns
+    -------
+    str
+        The policy diagnostic for the local workflow reference.
+
+    Examples
+    --------
+    >>> _local_workflow_problem("/".join((".", "missing.yml")), {})
+    'calls an unreadable local workflow'
+    """
+    path, separator, _reference = uses.partition("@")
+    if separator:
+        return "calls a local workflow at an uninspectable external ref"
+    workflow_name = PurePosixPath(path).name
+    if workflow_name not in documents:
+        return "calls an unreadable local workflow"
+    return "calls a local reusable workflow whose suite paths are not checked"
 
 
 def _mutation_violations(where: str, job: dict[str, object]) -> list[str]:
     """Check the caller's pre-suite setup command and its failure handling."""
-    setup = job.get("with")
-    if not isinstance(setup, dict):
-        return [f"{where} must pass make install-build-tools before mutation tests"]
-    commands = setup.get("setup-commands")
-    if not isinstance(commands, str):
+    commands = _setup_commands(job)
+    if commands is None:
         return [f"{where} must pass make install-build-tools before mutation tests"]
 
     violations: list[str] = []
@@ -164,24 +178,58 @@ def _mutation_violations(where: str, job: dict[str, object]) -> list[str]:
         for line in commands.splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
+    install_problem = _install_order_problem(where, install_lines)
+    if install_problem is not None:
+        violations.append(install_problem)
+    return violations
+
+
+def _setup_commands(job: dict[str, object]) -> str | None:
+    """Read a reusable job's string-valued setup-commands input.
+
+    Returns
+    -------
+    str | None
+        The command text, or ``None`` when the input shape is unsupported.
+
+    Examples
+    --------
+    For example, ``_setup_commands({"with": {"setup-commands": "make"}})``
+    returns ``"make"``; malformed input returns ``None``.
+    """
+    setup = job.get("with")
+    if not isinstance(setup, dict):
+        return None
+    commands = setup.get("setup-commands")
+    return commands if isinstance(commands, str) else None
+
+
+def _install_order_problem(where: str, install_lines: list[str]) -> str | None:
+    """Require exactly one unconditional install command with its status intact.
+
+    Returns
+    -------
+    str | None
+        The first installation-order diagnostic, or ``None`` when valid.
+
+    Examples
+    --------
+    >>> _install_order_problem("job", ["make install-build-tools"])
+    >>> _install_order_problem("job", [])
+    'job setup-commands must run one unconditional make install-build-tools command'
+    """
     exact_installs = [
         index
         for index, line in enumerate(install_lines)
         if line == "make install-build-tools"
     ]
     if len(exact_installs) != 1:
-        violations.append(
-            f"{where} setup-commands must run one unconditional "
-            "make install-build-tools command"
-        )
-    elif any(line == "set +e" for line in install_lines[: exact_installs[0]]):
-        violations.append(f"{where} must preserve the install-build-tools exit status")
-    elif _install_is_conditional(install_lines, exact_installs[0]):
-        violations.append(
-            f"{where} setup-commands must run one unconditional "
-            "make install-build-tools command"
-        )
-    return violations
+        return f"{where} {_INSTALL_COMMAND_DIAGNOSTIC}"
+    if any(line == "set +e" for line in install_lines[: exact_installs[0]]):
+        return f"{where} must preserve the install-build-tools exit status"
+    if _install_is_conditional(install_lines, exact_installs[0]):
+        return f"{where} {_INSTALL_COMMAND_DIAGNOSTIC}"
+    return None
 
 
 def _continues_on_error(mapping: dict[str, object]) -> bool:
@@ -205,19 +253,12 @@ def _install_is_conditional(lines: list[str], install_index: int) -> bool:
 
 def _is_suite_step(step: dict[str, object]) -> bool:
     """Recognize direct suite commands and the shared coverage action."""
-    uses = step.get("uses")
-    if uses is not None:
-        if not isinstance(uses, str):
-            message = f"cannot read step action reference {uses!r}"
-            raise WorkflowError(message)
-        if "generate-coverage" in uses.casefold():
-            return True
-    run = step.get("run")
+    uses = _optional_text(step, "uses", "action reference")
+    if uses is not None and "generate-coverage" in uses.casefold():
+        return True
+    run = _optional_text(step, "run", "run command")
     if run is None:
         return False
-    if not isinstance(run, str):
-        message = f"cannot read step run command {run!r}"
-        raise WorkflowError(message)
     return any(
         SUITE_COMMAND.search(line) is not None
         for line in run.splitlines()
@@ -225,30 +266,50 @@ def _is_suite_step(step: dict[str, object]) -> bool:
     )
 
 
+def _optional_text(step: dict[str, object], key: str, label: str) -> str | None:
+    """Read optional text from a step, naming values of the wrong type.
+
+    For example, ``_optional_text({"run": "make"}, "run", "command")``
+    returns ``"make"``; an absent key returns ``None``.
+
+    Returns
+    -------
+    str | None
+        The string value, or ``None`` when the key is absent.
+
+    Raises
+    ------
+    WorkflowError
+        If the present value is not a string.
+    """
+    if key not in step:
+        return None
+    value = step[key]
+    if not isinstance(value, str):
+        message = f"cannot read step {label} {value!r}"
+        raise WorkflowError(message)
+    return value
+
+
 def _step_installer_violations(
     where: str, steps: list[dict[str, object]], suite_index: int
 ) -> list[str]:
     """Require an unconditional approved setup-rust step before the suite."""
     candidates = [
-        (index, step)
+        (index, step, _setup_rust_problems(step))
         for index, step in enumerate(steps)
         if _is_setup_rust_candidate(step)
     ]
     valid_before = [
         index
-        for index, step in candidates
-        if index < suite_index and not _setup_rust_problems(step)
+        for index, _step, problems in candidates
+        if index < suite_index and not problems
     ]
     if valid_before:
         return []
 
-    problems = [
-        problem for _, step in candidates for problem in _setup_rust_problems(step)
-    ]
-    if any(
-        index >= suite_index and not _setup_rust_problems(step)
-        for index, step in candidates
-    ):
+    problems = [problem for _, _, found in candidates for problem in found]
+    if any(index >= suite_index and not found for index, _, found in candidates):
         problems.append("the pinned linker installer must run before the suite")
     if not candidates:
         problems.append("no pinned linker installer occurs before the suite")
@@ -279,15 +340,33 @@ def _step_wrapper_violations(
             "no unconditional make install-build-tools step occurs before the suite"
         )
     for index, step in candidates:
-        if "if" in step:
-            problems.append(
-                "make install-build-tools step must not have an if condition"
-            )
-        if _continues_on_error(step):
-            problems.append("make install-build-tools step must not continue on error")
-        if index >= suite_index:
-            problems.append("make install-build-tools must run before the suite")
+        problems.extend(_wrapper_step_problems(index, step, suite_index))
     return [f"{where} {problem}" for problem in dict.fromkeys(problems)]
+
+
+def _wrapper_step_problems(
+    index: int, step: dict[str, object], suite_index: int
+) -> list[str]:
+    """Report condition, soft-failure, and ordering problems for one installer.
+
+    Returns
+    -------
+    list[str]
+        Ordered diagnostics for this installer step.
+
+    Examples
+    --------
+    >>> _wrapper_step_problems(1, {"run": "make install-build-tools"}, 0)
+    ['make install-build-tools must run before the suite']
+    """
+    problems: list[str] = []
+    if "if" in step:
+        problems.append("make install-build-tools step must not have an if condition")
+    if _continues_on_error(step):
+        problems.append("make install-build-tools step must not continue on error")
+    if index >= suite_index:
+        problems.append("make install-build-tools must run before the suite")
+    return problems
 
 
 def _is_setup_rust_candidate(step: dict[str, object]) -> bool:

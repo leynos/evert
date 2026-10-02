@@ -80,6 +80,17 @@ fn make_dry_run_with_options(
 
 /// Finds logical Cargo commands in evaluated Make output, including continuations.
 fn cargo_invocation_lines(output: &str) -> Vec<String> {
+    logical_lines(output)
+        .into_iter()
+        .filter(|line| contains_cargo_executable(line))
+        .collect()
+}
+
+/// Folds continued Make output lines into their logical commands.
+///
+/// For example, `probe-cargo check \` followed by an indented `--all-targets`
+/// line becomes `probe-cargo check --all-targets`.
+fn logical_lines(output: &str) -> Vec<String> {
     let mut logical_lines = Vec::new();
     let mut pending = String::new();
     for line in output.lines() {
@@ -97,19 +108,24 @@ fn cargo_invocation_lines(output: &str) -> Vec<String> {
     if !pending.is_empty() {
         logical_lines.push(pending);
     }
-
     logical_lines
-        .into_iter()
-        .filter(|line| {
-            line.split_whitespace().any(|word| {
-                word == PROBE_CARGO
-                    || word == "cargo"
-                    || word == "cargo.exe"
-                    || word.ends_with("/cargo")
-                    || word.ends_with("/cargo.exe")
-            })
-        })
-        .collect()
+}
+
+/// Returns whether a logical command names a supported Cargo executable.
+///
+/// ```text
+/// contains_cargo_executable("env RUSTFLAGS=x /usr/bin/cargo check") -> true
+/// contains_cargo_executable("echo cargo") -> true
+/// contains_cargo_executable("probe-cargo check") -> true
+/// ```
+fn contains_cargo_executable(line: &str) -> bool {
+    line.split_whitespace().any(|word| {
+        word == PROBE_CARGO
+            || word == "cargo"
+            || word == "cargo.exe"
+            || word.ends_with("/cargo")
+            || word.ends_with("/cargo.exe")
+    })
 }
 
 /// Isolates the compiler environment applied after a cross-route preflight.

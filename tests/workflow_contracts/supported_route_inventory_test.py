@@ -3,8 +3,13 @@
 from pathlib import Path
 
 import pytest
-from supported_route_rules import COVERAGE, guide_errors, supported_route_violations
-from workflow_contract_support import fresh_documents, jobs
+from supported_route_rules import (
+    COVERAGE,
+    _release_command_errors,
+    guide_errors,
+    supported_route_violations,
+)
+from workflow_contract_support import Step, fresh_documents, jobs
 
 ROOT = Path(__file__).resolve().parents[2]
 GUIDE = ROOT / "docs" / "developers-guide.md"
@@ -96,3 +101,89 @@ def test_cross_host_unsupported_guidance_cannot_be_removed() -> None:
     errors = guide_errors(mutated)
     assert mutated != guide, "the guide no longer contains the sentence under test"
     assert any("unsupported boundary" in error for error in errors), errors
+
+
+def test_missing_release_steps_skip_their_command_checks() -> None:
+    """An absent step adds no command diagnostics for that step."""
+    valid_build: tuple[int, Step] = (
+        1,
+        {
+            "run": (
+                "env -u CARGO_ENCODED_RUSTFLAGS cross +stable build --release "
+                "--target ${{ matrix.target }}"
+            )
+        },
+    )
+    invalid_install: tuple[int, Step] = (0, {"run": "cargo install cross"})
+
+    assert not _release_command_errors(None, valid_build), (
+        "a missing install step must not add install command errors"
+    )
+    assert _release_command_errors(invalid_install, None) == [
+        "release.yml Install cross must clear encoded flags"
+    ], "a missing build step must not add build command errors"
+
+
+def test_release_commands_allow_whitespace_and_install_script_context() -> None:
+    """Commands are whitespace-normalized; install accepts context and flags."""
+    install: tuple[int, Step] = (
+        0,
+        {
+            "run": (
+                "echo prepare\n  env -u CARGO_ENCODED_RUSTFLAGS\n"
+                "cargo install cross --locked\necho finish"
+            )
+        },
+    )
+    build: tuple[int, Step] = (
+        1,
+        {
+            "run": (
+                "  env -u CARGO_ENCODED_RUSTFLAGS\n"
+                "cross +stable build --release --target ${{ matrix.target }}  "
+            )
+        },
+    )
+
+    assert not _release_command_errors(install, build), (
+        "whitespace normalization and extra install context should pass"
+    )
+
+
+def test_install_command_requires_the_encoded_flags_substring() -> None:
+    """Install scripts without the expected prefix retain their diagnostic."""
+    install: tuple[int, Step] = (0, {"run": "cargo install cross --locked"})
+    assert _release_command_errors(install, None) == [
+        "release.yml Install cross must clear encoded flags"
+    ], "installation command without the flags-clearing substring was accepted"
+
+
+def test_prefixed_wrong_release_command_reports_only_target_mismatch() -> None:
+    """A correct prefix with a wrong command fails only the exact-command check."""
+    build: tuple[int, Step] = (
+        1,
+        {"run": "env -u CARGO_ENCODED_RUSTFLAGS cross build --release"},
+    )
+    assert _release_command_errors(None, build) == [
+        "release.yml must build every matrix target with cross +stable"
+    ], "correct prefix with wrong build command must report only target mismatch"
+
+
+def test_unprefixed_wrong_release_command_reports_both_errors_in_order() -> None:
+    """Prefix and exact-command checks remain independent and ordered."""
+    build: tuple[int, Step] = (1, {"run": "cross build --release"})
+    assert _release_command_errors(None, build) == [
+        "release.yml Build release binary must clear encoded flags",
+        "release.yml must build every matrix target with cross +stable",
+    ], "unprefixed build must report both independent diagnostics"
+
+
+def test_install_diagnostic_precedes_both_build_diagnostics() -> None:
+    """Release command errors retain install-before-build aggregation order."""
+    install: tuple[int, Step] = (0, {"run": "cargo install cross"})
+    build: tuple[int, Step] = (1, {"run": "cross build --release"})
+    assert _release_command_errors(install, build) == [
+        "release.yml Install cross must clear encoded flags",
+        "release.yml Build release binary must clear encoded flags",
+        "release.yml must build every matrix target with cross +stable",
+    ], "installation error must precede both build command errors"

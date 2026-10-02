@@ -3,6 +3,7 @@
 import dataclasses
 import re
 
+from supported_route_command_rules import _release_build_command_errors
 from workflow_contract_support import Document, WorkflowError, calls, jobs, triggers
 
 UBUNTU = "ubuntu-latest"  # Runner label does not prove x86_64 architecture.
@@ -280,17 +281,7 @@ def _release_command_errors(install: Found, build: Found) -> list[str]:
         command = " ".join(str(install[1].get("run", "")).split())
         if f"{cleared}cargo install cross" not in command:
             errors.append("release.yml Install cross must clear encoded flags")
-    if build is not None:
-        command = " ".join(str(build[1].get("run", "")).split())
-        if not command.startswith(cleared):
-            errors.append("release.yml Build release binary must clear encoded flags")
-        expected = (
-            f"{cleared}cross +stable build --release --target ${{{{ matrix.target }}}}"
-        )
-        if command != expected:
-            errors.append(
-                "release.yml must build every matrix target with cross +stable"
-            )
+    errors.extend(_release_build_command_errors(build))
     return errors
 
 
