@@ -77,24 +77,48 @@ def _reject_duplicate_mapping_keys(
                 _reject_duplicate_mapping_keys(loader, child_node, visited)
 
 
-def load_workflow(name: str, text: str) -> Document:
-    """Parse one workflow mapping and name syntax errors with its file."""
+def _construct_workflow_yaml(text: str) -> object:
+    """Construct one safe YAML document after checking its mapping keys.
+
+    Parameters
+    ----------
+    text
+        YAML source containing at most one document.
+
+    Returns
+    -------
+    object
+        The constructed document, or ``None`` for an empty stream.
+
+    The parsing and duplicate-key errors are passed unchanged to the sole
+    caller, which adds the workflow filename.
+
+    Examples
+    --------
+    >>> load_workflow("ci.yml", "jobs: {}")
+    {'jobs': {}}
+    """
     loader = yaml.SafeLoader(text)
     try:
         node = loader.get_single_node()
         if node is None:
-            document = None
-        else:
-            _reject_duplicate_mapping_keys(loader, node, set())
-            document = loader.construct_document(node)
+            return None
+        _reject_duplicate_mapping_keys(loader, node, set())
+        return loader.construct_document(node)
+    finally:
+        loader.dispose()
+
+
+def load_workflow(name: str, text: str) -> Document:
+    """Parse one workflow mapping and name syntax errors with its file."""
+    try:
+        document = _construct_workflow_yaml(text)
     except yaml.YAMLError as error:
         message = f"{name}: not valid YAML: {error}"
         raise WorkflowError(message) from error
     except WorkflowError as error:
         message = f"{name}: {error}"
         raise WorkflowError(message) from error
-    finally:
-        loader.dispose()
     if not isinstance(document, dict):
         message = f"{name}: a workflow must be a mapping"
         raise WorkflowError(message)

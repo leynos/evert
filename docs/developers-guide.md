@@ -283,6 +283,12 @@ reading and workflow-shape access. Keep build, coverage, and route assertions
 in their corresponding `*_rules.py` modules; do not extend the helper with
 another copy of shared CV-005 policy.
 
+Within that module, the private `_construct_workflow_yaml` helper owns the
+single-document `SafeLoader` lifecycle, duplicate-key validation, and document
+construction. `load_workflow` is its only permitted caller and owns the
+filename-prefixed errors and root-shape check. Policy modules must use
+`load_workflow` or `read_workflows`; they must not call the constructor helper.
+
 `make test-workflow-contracts` holds this shape by running
 `cv005-contracts check`, the shared contract library in `leynos/shared-actions`
 (`packages/cv005-contracts`), from a full commit named by `CV005_CONTRACTS_REF`
