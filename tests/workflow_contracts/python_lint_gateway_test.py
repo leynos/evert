@@ -166,6 +166,14 @@ def test_python_baseline_agrees_across_gateway_files() -> None:
     )
 
 
+def test_cv005_contracts_use_the_repository_python_baseline() -> None:
+    """The shared workflow-contract CLI must use managed CPython 3.14."""
+    command = " ".join(_makefile_variable("CV005_CONTRACTS").split())
+    assert "--managed-python --python $(PYTHON_BASELINE)" in command, (
+        "CV-005 contracts must use the managed Python baseline"
+    )
+
+
 def test_every_python_file_sits_under_a_lint_root() -> None:
     """Python outside the Makefile's source roots would escape every linter."""
     roots = _makefile_variable("PYTHON_SOURCE_ROOTS").split()

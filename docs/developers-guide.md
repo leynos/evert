@@ -80,10 +80,10 @@ never treats the repository as a Python project. It mirrors the Ruff and Pylint
 configuration of `leynos/netsuke`, which itself mirrors `leynos/episodic`; only
 path-shaped settings are local.
 
-Repository-owned Python linting, typechecking, and pytest run on managed
-CPython 3.14 through `uv`; `uv` fetches the interpreter, so contributors need
-`uv` but not a system Python 3.14. The separate CV-005 shared contract CLI uses
-its own Python 3.13 pin in the `Makefile`. The Python baseline is
+Repository-owned Python scripts, linting, typechecking, and pytest run on
+managed CPython 3.14 through `uv`; `uv` fetches the interpreter, so
+contributors need `uv` but not a system Python 3.14. The shared CV-005 contract
+CLI also uses the managed Python 3.14 baseline. The Python baseline is
 `PYTHON_BASELINE` in the `Makefile`; CI and audit use literal `3.14`
 `setup-python` inputs, which workflow contract tests check against that
 baseline. The baseline must also agree with Ruff's `target-version` (`py314`)
@@ -319,12 +319,12 @@ filename-prefixed errors and root-shape check. Policy modules must use
 `cv005-contracts check`, the shared contract library in `leynos/shared-actions`
 (`packages/cv005-contracts`), from a full commit named by `CV005_CONTRACTS_REF`
 in the Makefile, and CI runs it as its own step. A fix to the rules is
-therefore a pin bump. The target needs `uv`, which fetches the Python 3.13 the
-library runs under. The repository's parameters are in `.github/cv005.toml`: its
-`repository` name and the `[selection]` inputs the baseline measures, which
-the publisher's generator must carry and every pull-request lane must match.
-The library's own suite proves each rule refuses the shape it exists to refuse,
-so this repository keeps no copy of the readers or the refusal cases. Its rules
+therefore a pin bump. The target needs `uv`, which fetches the managed Python
+3.14 baseline used to run the library. The repository's parameters are in
+`.github/cv005.toml`: its `repository` name and `[selection]` inputs are the
+baseline measured by the publisher's generator and every pull-request lane. The
+library's own suite proves each rule refuses the shape it exists to refuse, so
+this repository keeps no copy of the readers or the refusal cases. Its rules
 read every workflow a pull request can start, from its own events, reviews and
 comments, a merge queue, or a push not confined to `main` or tags, following
 local reusable-workflow calls, `workflow_run` chains and local composite

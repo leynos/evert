@@ -38,9 +38,9 @@ WHITAKER_PACKAGES ?= --all
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 
-# The Python baseline for lint, typecheck, and workflow tests. Bump it together
-# with `target-version` and `py-version` in pyproject.toml; contract tests keep
-# the settings in sync.
+# The CPython baseline for repository scripts, modules, tests, and Python
+# tools. Bump it with `target-version` and `py-version` in pyproject.toml;
+# contract tests keep the settings in sync.
 PYTHON_BASELINE ?= 3.14
 
 # The Python lint gateway mirrors leynos/netsuke. Each tool is pinned so `make`
@@ -111,7 +111,8 @@ PYTHON_IMPORT_ROOTS = $(addprefix --extra-search-path ,$(wildcard $(PYTHON_SOURC
 # CV-005 CodeScene contracts run from the shared-actions commit pinned here.
 # `.github/cv005.toml` carries this repository's selection parameters.
 CV005_CONTRACTS_REF ?= a38feb9be25755c30eca5bda96bd3786a5b89c6b
-CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --python 3.13 \
+CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --managed-python \
+	--python $(PYTHON_BASELINE) \
 	--from 'git+https://github.com/leynos/shared-actions@$(CV005_CONTRACTS_REF)\#subdirectory=packages/cv005-contracts' \
 	cv005-contracts
 
