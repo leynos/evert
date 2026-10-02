@@ -331,6 +331,9 @@ development target on Linux x86_64, Linux aarch64, and macOS hosts (each
 keeping the caller's own `RUSTFLAGS`) and for each coverage and release target
 on Linux, and the `setup-rust` steps of the CI workflows (each must pass
 `install-mold`), so a flag lost through a recipe or workflow edit fails there.
+The text readers take fixture input and never start Make. The separate
+`make_execution` adapter is reserved for repository integration checks that
+must inspect the real target expansions.
 
 ### Backend support
 

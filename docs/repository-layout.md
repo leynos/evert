@@ -50,7 +50,13 @@ compact and omits build output such as `target/`.
 │   │   ├── ci_steps.rs
 │   │   ├── config.rs
 │   │   ├── coverage_contract.rs
-│   │   └── make.rs
+│   │   ├── held_out_contract.rs
+│   │   ├── linux_config_contract.rs
+│   │   ├── make.rs
+│   │   ├── make_execution.rs
+│   │   ├── properties.rs
+│   │   ├── toolchain_contract.rs
+│   │   └── workflow_contract.rs
 │   ├── makefile_contract.rs
 │   ├── makefile_contract_support/
 │   │   ├── clippy_target_route.rs

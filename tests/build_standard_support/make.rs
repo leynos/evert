@@ -1,8 +1,7 @@
 //! Readers for the Makefile half of the build standard: the commands
 //! `make -n` prints for each development, coverage and release target, judged
-//! against a toolchain pin and a host.
-
-use std::process::Command;
+//! against a toolchain pin and a host. Process execution lives in
+//! `make_execution`; reader fixtures consume supplied output directly.
 
 use super::config::{
     BACKEND_FLAG,
@@ -78,11 +77,27 @@ pub enum Assignment {
 /// Returns the reason when an assignment is unreadable or glues inherited
 /// flags to the following flag.
 pub fn assigned_rustflags(line: &str) -> Result<Assignment, String> {
-    if line.contains("effective_flags=") && line.contains("exec env RUSTFLAGS=\"$effective_flags\"")
-    {
-        // The shell wrapper receives Make's flags as `$make_flags`; it passes
-        // those separately and only inherits the caller's environment here.
-        return Ok(Assignment::Flags(Flags::from_words([]), true));
+    if line.contains("make_flags=$1") || line.contains("effective_flags=") {
+        let expected_flags = "effective_flags=\"${RUSTFLAGS:+$RUSTFLAGS }$make_flags\"";
+        let expected_assignment =
+            "exec env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=\"$effective_flags\" \"$@\"";
+        if !line.contains(expected_flags) || !line.contains(expected_assignment) {
+            return Err(format!("unreadable shell RUSTFLAGS wrapper in `{line}`"));
+        }
+        let Some((_, arguments)) = line.split_once("' _ '") else {
+            return Err(format!(
+                "shell RUSTFLAGS wrapper has no make_flags argument in `{line}`"
+            ));
+        };
+        let Some((make_flags, _)) = arguments.split_once('\'') else {
+            return Err(format!(
+                "shell RUSTFLAGS wrapper has an unreadable make_flags argument in `{line}`"
+            ));
+        };
+        return Ok(Assignment::Flags(
+            Flags::from_words(make_flags.split_whitespace()),
+            true,
+        ));
     }
     let Some((_, rest)) = line.split_once("RUSTFLAGS=\"") else {
         if line.contains("RUSTFLAGS=") {
@@ -134,27 +149,9 @@ pub fn commands_from(stdout: &str) -> Result<Vec<Assignment>, String> {
         .collect()
 }
 
-/// Runs `make -n` for one target and returns its stdout without parsing it.
+/// Runs the separate Make process boundary for one host and target.
 fn run_make_dry_run(target: &str, host: Host) -> Result<String, String> {
-    let output = Command::new("make")
-        .args([
-            "-n",
-            "-B",
-            &format!("BUILD_HOST_OS={}", host.make_value()),
-            &format!("BUILD_HOST_ARCH={}", host.arch_value()),
-            target,
-        ])
-        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), ""))
-        .env("GITHUB_ACTIONS", "false")
-        .output()
-        .map_err(|error| format!("running make: {error}"))?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() {
-        return Err(format!(
-            "`make -n {target}` failed, so it is not defined: {stderr}"
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    super::make_execution::run_make_dry_run(target, host.make_value(), host.arch_value())
 }
 
 /// Obtains output through the injected runner, then parses it at this boundary.

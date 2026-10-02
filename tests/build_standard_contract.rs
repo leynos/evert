@@ -26,11 +26,20 @@ mod ci_steps;
 mod config;
 #[path = "build_standard_support/coverage_contract.rs"]
 mod coverage_contract;
+#[path = "build_standard_support/held_out_contract.rs"]
+mod held_out_contract;
+#[path = "build_standard_support/linux_config_contract.rs"]
+mod linux_config_contract;
 #[path = "build_standard_support/make.rs"]
 mod make;
+#[path = "build_standard_support/make_execution.rs"]
+mod make_execution;
 #[path = "build_standard_support/properties.rs"]
 mod properties;
-use ci_steps::{linker_install_problems, workflow_problems};
+#[path = "build_standard_support/toolchain_contract.rs"]
+mod toolchain_contract;
+#[path = "build_standard_support/workflow_contract.rs"]
+mod workflow_contract;
 use config::{
     BACKEND_FLAG,
     CONFIG,
@@ -51,7 +60,6 @@ use make::{
     development_problems,
     development_problems_with,
     held_out_problems,
-    held_out_problems_with,
     held_out_target_count,
 };
 use rstest::rstest;
@@ -241,8 +249,8 @@ fn flags(words: &[&str], inherits: bool) -> Assignment {
     flags(&[BACKEND_FLAG, THREADS_FLAG], true)
 )]
 #[case::shell_wrapper_inherits_caller_flags(
-    r#"bash -c 'effective_flags="${RUSTFLAGS:+$RUSTFLAGS }$make_flags"; exec env RUSTFLAGS="$effective_flags" cargo test' _ '-D warnings'"#,
-    flags(&[], true)
+    r#"bash -c 'make_flags=$1; shift; effective_flags="${RUSTFLAGS:+$RUSTFLAGS }$make_flags"; exec env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="$effective_flags" "$@"' _ '-D warnings' cargo test"#,
+    flags(&["-D", "warnings"], true)
 )]
 #[case::inherited_flags_only("RUSTFLAGS=\"${RUSTFLAGS-}\" cargo build --release", flags(&[], true))]
 #[case::no_assignment("cargo clippy --all-targets", Assignment::Unassigned)]
@@ -270,73 +278,6 @@ fn the_command_reader_refuses_what_it_cannot_parse(#[case] line: &str) -> Result
         Err(_) => Ok(()),
     }
 }
-
-/// A workflow step that passes the input, quoted.
-const STEP_INSTALLS: &str = concat!(
-    "    steps:\n      - name: Setup Rust\n",
-    "        uses: \
-     org/shared-actions/.github/actions/setup-rust@0123456789abcdef0123456789abcdef01234567\n",
-    "        with:\n          install-mold: 'true'\n"
-);
-/// The same, with the bare value.
-const STEP_INSTALLS_BARE: &str = concat!(
-    "    steps:\n      - uses: \
-     org/shared-actions/.github/actions/setup-rust@0123456789abcdef0123456789abcdef01234567\n",
-    "        with:\n          install-mold: true\n"
-);
-/// A step with no input at all.
-const STEP_MISSING_INPUT: &str = concat!(
-    "    steps:\n      - name: Setup Rust\n",
-    "        uses: \
-     org/shared-actions/.github/actions/setup-rust@0123456789abcdef0123456789abcdef01234567\n"
-);
-/// A step that turns the input off.
-const STEP_INPUT_OFF: &str = concat!(
-    "    steps:\n      - name: Setup Rust\n",
-    "        uses: \
-     org/shared-actions/.github/actions/setup-rust@0123456789abcdef0123456789abcdef01234567\n",
-    "        with:\n          install-mold: 'false'\n"
-);
-/// A step without the input, followed by a step that has one for another action.
-const STEP_BEFORE_A_SIBLING_THAT_INSTALLS: &str = concat!(
-    "    steps:\n      - name: Setup Rust\n",
-    "        uses: \
-     org/shared-actions/.github/actions/setup-rust@0123456789abcdef0123456789abcdef01234567\n",
-    "      - name: Other\n        uses: org/other@abc\n        with:\n          install-mold: \
-     'true'\n"
-);
-/// A comment that names the action, and no step.
-const COMMENT_NAMING_THE_ACTION: &str =
-    "    steps:\n      # setup-rust@abc installs it\n      - run: make\n";
-
-/// Scenario: workflow steps that set up Rust with and without the input.
-///
-/// Invariant: a step must pass `install-mold: 'true'` itself; another step's
-/// input does not count, and a comment naming the action is not a step.
-#[rstest]
-#[case::quoted_true(STEP_INSTALLS, 0)]
-#[case::bare_true(STEP_INSTALLS_BARE, 0)]
-#[case::missing_input(STEP_MISSING_INPUT, 1)]
-#[case::input_off(STEP_INPUT_OFF, 1)]
-#[case::input_on_a_sibling_step(STEP_BEFORE_A_SIBLING_THAT_INSTALLS, 1)]
-#[case::comment_only(COMMENT_NAMING_THE_ACTION, 0)]
-fn the_workflow_reader_wants_the_input_on_each_step(
-    #[case] workflow: &str,
-    #[case] expected: usize,
-) -> Result<(), String> {
-    let found = linker_install_problems("fixture.yml", workflow).len();
-    if found == expected {
-        Ok(())
-    } else {
-        Err(format!("{workflow:?}: {found} problems, not {expected}"))
-    }
-}
-
-/// Every workflow that builds under the standard installs `mold`. A repository
-/// whose workflows do not set up Rust through `setup-rust` lists none, and the
-/// check then reads nothing; a listed workflow must have a step to read.
-#[test]
-fn every_setup_rust_step_installs_linker() -> Result<(), String> { none_of(&workflow_problems()) }
 
 /// Scenario: a recipe continued over lines, beside an `echo` and another command.
 ///
@@ -431,28 +372,6 @@ fn development_contract_propagates_runner_failures() {
     let mut runner = |target: &str, _host: Host| Err(format!("cannot inspect {target}"));
     let result = development_problems_with(Host::LinuxX86, Pin::Nightly, &mut runner);
     assert_eq!(result, Err("cannot inspect test".to_owned()));
-}
-
-#[test]
-fn held_out_routes_require_inherited_caller_flags() -> Result<(), String> {
-    let mut runner = |target: &str, _host: Host| {
-        let inherited = if target == "coverage" {
-            "${RUSTFLAGS:+$RUSTFLAGS }"
-        } else {
-            ""
-        };
-        Ok(format!(
-            "RUSTFLAGS=\"{inherited}-D warnings\" cargo build\n"
-        ))
-    };
-    let (problems, read) = held_out_problems_with(&mut runner)?;
-    if read != 2 {
-        return Err(format!("read {read} held-out commands, expected 2"));
-    }
-    if !matches!(problems.as_slice(), [problem] if problem.contains("release")) {
-        return Err(format!("unexpected held-out route findings: {problems:#?}"));
-    }
-    Ok(())
 }
 
 /// Coverage measures and release ships, so both omit development flags from

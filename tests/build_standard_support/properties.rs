@@ -5,7 +5,7 @@ use proptest::{prelude::*, test_runner::TestCaseError};
 use super::{
     ci_steps::{coverage_problems, linker_install_problems},
     config::{Flags, Pin, PinError, applies_to_target, config_problems},
-    make::{Assignment, assigned_rustflags, commands_from},
+    make::{Assignment, assigned_rustflags, commands_from, held_out_problems_with},
 };
 
 /// Flags required by the nightly Linux development route.
@@ -112,6 +112,46 @@ proptest! {
             property_result(assigned_rustflags(&command))?,
             expected,
             "quoted assignment did not preserve the generated flag sequence"
+        );
+    }
+
+    /// The shell wrapper exposes Make's own flags to the held-out route reader.
+    #[test]
+    fn shell_wrappers_normalize_recipe_flags_and_reject_development_flags(
+        ordinary_flags in prop::collection::vec("-[A-Za-z][A-Za-z0-9_-]{0,12}", 0..8),
+        forbidden_index in prop_oneof![Just(None), (0usize..4).prop_map(Some)],
+    ) {
+        let forbidden_flags = [
+            "-Zcodegen-backend=cranelift",
+            "-Zthreads=8",
+            "-Clinker=evert-clang-mold",
+            "-Clink-arg=-fuse-ld=mold",
+        ];
+        let mut recipe_flags = ordinary_flags;
+        if let Some(index) = forbidden_index {
+            let flag = forbidden_flags
+                .get(index)
+                .ok_or_else(|| TestCaseError::fail("generated flag index was out of range"))?;
+            recipe_flags.push((*flag).to_owned());
+        }
+        let make_flags = recipe_flags.join(" ");
+        let command = format!(
+            "bash -c 'make_flags=$1; shift; effective_flags=\"${{RUSTFLAGS:+$RUSTFLAGS }}$make_flags\"; exec env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=\"$effective_flags\" \"$@\"' _ '{make_flags}' cargo build\n"
+        );
+        let parsed = property_result(assigned_rustflags(&command))?;
+        prop_assert_eq!(
+            parsed,
+            Assignment::Flags(Flags::from_words(recipe_flags.iter().map(String::as_str)), true),
+            "the wrapper reader must retain its own positional flags"
+        );
+
+        let mut runner = |_target: &str, _host| Ok(command.clone());
+        let (problems, read) = property_result(held_out_problems_with(&mut runner))?;
+        prop_assert_eq!(read, 2, "both held-out routes must be inspected");
+        prop_assert_eq!(
+            problems.is_empty(),
+            forbidden_index.is_none(),
+            "caller flags remain inherited; standard flags in make_flags are recipe flags"
         );
     }
 
@@ -245,6 +285,42 @@ proptest! {
             Pin::read(&malformed),
             Err(PinError::MalformedChannel),
             "unquoted toolchain overrides must be rejected as malformed"
+        );
+    }
+
+    /// Unterminated or mismatched quotes never become valid channel strings.
+    #[test]
+    fn malformed_toolchain_quoting_is_rejected(
+        channel in "[a-z][a-z0-9-]{0,12}",
+    ) {
+        let unterminated = format!("[toolchain]\nchannel = \"{channel}\n");
+        let mismatched = format!("[toolchain]\nchannel = '{channel}\"\n");
+
+        prop_assert_eq!(
+            Pin::read(&unterminated),
+            Err(PinError::MalformedChannel),
+            "an unterminated channel string must be rejected"
+        );
+        prop_assert_eq!(
+            Pin::read(&mismatched),
+            Err(PinError::MalformedChannel),
+            "a channel with mismatched delimiters must be rejected"
+        );
+    }
+
+    /// Similar keys are not mistaken for the exact `channel` assignment.
+    #[test]
+    fn channel_like_keys_do_not_satisfy_toolchain_channel(
+        suffix in "[a-z][a-z0-9-]{0,12}",
+    ) {
+        let toolchain = format!(
+            "[toolchain]\nchannel-{suffix} = \"nightly\"\ndefault-channel = \"stable\"\n"
+        );
+
+        prop_assert_eq!(
+            Pin::read(&toolchain),
+            Err(PinError::MissingChannel),
+            "only the exact channel key satisfies the toolchain pin"
         );
     }
 

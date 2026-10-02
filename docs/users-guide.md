@@ -45,12 +45,26 @@ The generated `Makefile` exposes these public targets:
 
 Before the first local build, run `make install-build-tools` to install the
 pinned Rust toolchain and linker tools for native Linux x86_64 and aarch64
-development routes. Rustc uses its LLVM backend; Linux targets also use the
-parallel frontend and pinned `mold` linker. Bare Cargo commands on Linux need
-`$BUILD_TOOLS_PREFIX/bin` on `PATH`; Make targets add it automatically. Other
-platforms keep their platform linker. Install clang, python3, and cargo-audit
-before running the full generated workflow locally on Linux; coverage also
-requires lld. The Python linters, the Python type check, and workflow contract
-tests use `uv`, which fetches CPython 3.14 on demand. The
-[developers' guide](developers-guide.md) describes the backend and linker
-routing.
+development routes. On supported Linux hosts, the development build
+(`make build`), tests (`make test`), lint, and typecheck use rustc's LLVM
+backend, the nightly `-Zthreads=8` frontend, and the pinned `mold` linker.
+Cranelift is not selected: its panic-unwind failures are tracked for review in
+[issue #80](https://github.com/leynos/evert/issues/80) on 1 April 2027.
+
+The Linux Cargo configuration requires the pinned `mold` binary and the
+`evert-clang-mold` wrapper. Run `make install-build-tools` before the first
+Linux development build; it installs the pinned linker and wrapper. CI
+provisions the same prerequisite through `setup-rust` with
+`install-mold: 'true'`. Bare Cargo commands on Linux need
+`$BUILD_TOOLS_PREFIX/bin` on `PATH`; Make targets add it automatically. macOS
+and Windows keep their platform linkers.
+
+Coverage and release deliberately leave out the development flags while
+preserving caller-supplied `RUSTFLAGS`. `make coverage` uses Clang with `lld`
+for compatibility with coverage tooling. `make release` uses stable Rust and
+the platform linker; the release workflow uses the stable Cross route for its
+matrix targets. Install clang, python3, and cargo-audit before running the full
+generated workflow locally on Linux; coverage also requires lld. The Python
+linters, the Python type check, and workflow contract tests use `uv`, which
+fetches CPython 3.14 on demand. The [developers' guide](developers-guide.md)
+describes the backend and linker routing.
