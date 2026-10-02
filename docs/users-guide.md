@@ -90,9 +90,9 @@ preserving caller-supplied `RUSTFLAGS`. `make coverage` uses Clang with `lld`
 for compatibility with coverage tooling. `make release` uses stable Rust and
 the platform linker; the release workflow uses the stable Cross route for its
 matrix targets. Install clang, python3, and cargo-audit before running the full
-local workflow on Linux; coverage also requires lld. The Python
-linters, the Python type check, and workflow contract tests use `uv`, which
-fetches CPython 3.14 on demand. The [developers' guide](developers-guide.md)
-describes the backend and linker routing. The gates also use Whitaker,
-`markdownlint-cli2`, `mdtablefix`, and `nixie`, and coverage needs
-`cargo-llvm-cov`; cargo-nextest is optional.
+local workflow on Linux; coverage also requires lld. The Python linters, the
+Python type check, and workflow contract tests use `uv`, which fetches CPython
+3.14 on demand. The [developers' guide](developers-guide.md) describes the
+backend and linker routing. The gates also use Whitaker, `markdownlint-cli2`,
+`mdtablefix`, and `nixie`, and coverage needs `cargo-llvm-cov`; cargo-nextest
+is optional.
