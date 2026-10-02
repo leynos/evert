@@ -154,16 +154,11 @@ def _runner_label_set_status(
     labels: list[object], job: dict[str, object]
 ) -> bool | None:
     """Classify runner labels without treating conflicting OS labels as Linux."""
-    statuses = [_runner_value_status_for_job(value, job) for value in labels]
-    has_linux = True in statuses
-    has_non_linux = False in statuses
-    if has_linux and has_non_linux:
+    statuses = {_runner_value_status_for_job(value, job) for value in labels}
+    known_statuses = statuses - {None}
+    if len(known_statuses) != 1:
         return None
-    if has_linux:
-        return True
-    if has_non_linux:
-        return False
-    return None
+    return next(iter(known_statuses))
 
 
 def _runner_value_status_for_job(value: object, job: dict[str, object]) -> bool | None:
