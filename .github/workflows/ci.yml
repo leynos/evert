@@ -18,7 +18,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Rust
-        uses: leynos/shared-actions/.github/actions/setup-rust@c4ed5ffaf0640b1907d5359a87fd1677034eec27
+        uses: leynos/shared-actions/.github/actions/setup-rust@0606ca899ce2995a0c4bc78e660e80832e6e8855
         with:
           expect-cache: any
       - name: Install mold linker
@@ -32,7 +32,7 @@ jobs:
       - name: Install mdtablefix
         # `make check-fmt` runs `mdtablefix --check --git`; 0.6.0 is the
         # first release with `--check` and `--git`.
-        uses: leynos/shared-actions/.github/actions/install-mdtablefix@ff1dd759dfffc0db3459e30e833f52437ee62b57
+        uses: leynos/shared-actions/.github/actions/install-mdtablefix@0606ca899ce2995a0c4bc78e660e80832e6e8855
         with:
           version: "0.6.0"
 
@@ -88,7 +88,7 @@ jobs:
       # artefact and never contacts CodeScene.
       - name: Test and Measure Coverage
         if: github.event_name == 'pull_request'
-        uses: leynos/shared-actions/.github/actions/generate-coverage@82feb2b7aac45b7efff40c9c4bb632551b14521c
+        uses: leynos/shared-actions/.github/actions/generate-coverage@0606ca899ce2995a0c4bc78e660e80832e6e8855
         env:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
           RUSTFLAGS: -C link-arg=-fuse-ld=lld
