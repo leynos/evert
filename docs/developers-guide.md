@@ -54,7 +54,13 @@ on.
 `make spelling`, which invokes the `typos-config-builder` gate pinned by
 `TYPOS_CONFIG_BUILDER_VERSION` in the `Makefile`. The gate regenerates
 `typos.toml` from the live shared dictionary and this repository's overlay on
-every run, then scans tracked Markdown files.
+every run, then runs Typos on tracked Markdown files. The separate phrase stage
+checks eligible tracked text files, including non-Markdown files, for
+corrections that single-word spelling checks cannot express, such as
+`hand-written` becoming `handwritten`. The pin is currently `v0.1.3`; raise it
+together with the regenerated `typos.toml`, never on its own. The builder
+requires Python 3.14 or newer, so the target passes `--python 3.14` and `uv`
+fetches that interpreter when the host lacks one.
 
 The shared dictionary is maintained in `leynos/agent-helper-scripts` and is
 fetched by the gate; `typos.toml` is a generated artefact, so CI never
