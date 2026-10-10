@@ -38,7 +38,7 @@ extend-ignore-re = [
     "(?m)^[ ]+linker_binary_version mold$",
     "(?m)^[ ]+types: \\[opened, reopened, synchronize, labeled, ready_for_review\\]$",
     "(?s)```.*?```",
-    "--[a-zA-Z0-9-]*color[a-zA-Z0-9*-]*",
+    "--[A-Za-z0-9_-]*color(?:ed|s|ing|ize[ds]?|izing)?(?:\\b|_)",
     "Azure\\s+Architecture\\s+Center\\s*\\|\\s*Microsoft\\s+Learn\\b",
     "CARGO_TERM_COLOR",
     "GitHub\\s+Flavored\\s+Markdown\\b(?:\\s\\(GFM\\))?",
