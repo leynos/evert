@@ -140,10 +140,7 @@ def read_workflows(directory: Path = WORKFLOW_DIRECTORY) -> Workflow:
         message = f"no workflows were read from {directory}"
         raise WorkflowError(message)
 
-    workflows: Workflow = {}
-    for path in paths:
-        workflows[path.name] = _read_workflow(path)
-    return workflows
+    return {path.name: _read_workflow(path) for path in paths}
 
 
 def _read_workflow(path: Path) -> Document:
