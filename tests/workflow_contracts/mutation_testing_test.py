@@ -30,10 +30,10 @@ WORKFLOW_PATH = (
 #: forwards it to Setup Rust; Dependabot proposals need that source review
 #: before another SHA is added here.
 _REVIEWED_SHARED_ACTION_PIN_PARTS = (
-    "9a27950942",
-    "334d69ff79",
-    "005b3a8db2",
-    "3bf151f43f",
+    "d0c2585d9e",
+    "144775e4ec",
+    "9fe26e7eeb",
+    "03c14844dd",
 )
 REVIEWED_SHARED_ACTION_PINS = frozenset({"".join(_REVIEWED_SHARED_ACTION_PIN_PARTS)})
 _OLD_SHARED_ACTION_PIN_PARTS = (

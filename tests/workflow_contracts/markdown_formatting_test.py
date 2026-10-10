@@ -62,8 +62,8 @@ def _installer_findings(steps: list[dict[str, object]], checks: list[int]) -> li
             "mdtablefix installer must use a full commit SHA",
         ),
         (
-            isinstance(inputs, dict) and inputs.get("version") == "0.6.0",
-            "mdtablefix installer must request version 0.6.0",
+            isinstance(inputs, dict) and inputs.get("version") == "0.6.1",
+            "mdtablefix installer must request version 0.6.1",
         ),
         (
             _is_unconditional(step),
