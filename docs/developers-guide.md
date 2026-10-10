@@ -376,7 +376,13 @@ wrapper and quoted `RUSTFLAGS` parsing remain in
 `build_standard_support/make.rs`. Keep the parameterized cross-route
 linker-argument regression with its caller-flag contract in
 `makefile_contract_support/cross_caller_flags.rs`. These readers and regression
-cases are module-local; do not make them shared cross-module helpers.
+cases are module-local; do not make them shared cross-module helpers. The
+assignment and inheritance helpers (`shell_wrapper_assignment`,
+`quoted_assignment`, `has_glued_inherited_flags`, and `inherits_caller_flags`)
+are private to `make.rs`; they have no production callers outside that module.
+Within it, `assigned_rustflags` alone dispatches to the wrapper and quoted
+readers, and `quoted_assignment` alone calls the inheritance predicates. The
+child test module exercises the helpers directly.
 
 ### Backend support
 
