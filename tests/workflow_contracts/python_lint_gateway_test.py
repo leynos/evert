@@ -207,6 +207,13 @@ def test_every_python_file_sits_under_a_lint_root() -> None:
     )
 
 
+def test_coverage_environment_is_excluded_from_source_inventory() -> None:
+    """The coverage action's venv is not repository Python source."""
+    assert ".venv-coverage" in _excluded_names(), (
+        "the managed coverage environment must be excluded from source inventory"
+    )
+
+
 @pytest.mark.parametrize(
     ("target", "prerequisite"),
     [

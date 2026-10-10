@@ -1,6 +1,7 @@
 target/
 **/*.rs.bk
 __pycache__/
+.venv-coverage/
 .coverage
 .typos-oxendict-base.json
 .typos-oxendict-base.toml

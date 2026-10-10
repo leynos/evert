@@ -27,6 +27,7 @@ target-version = "py314"
 extend-exclude = [
     ".uv-cache",
     ".uv-tools",
+    ".venv-coverage",
     "target",
     "vendor",
     ".pytest_cache",
