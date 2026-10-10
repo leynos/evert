@@ -56,15 +56,24 @@ jobs:
       - name: Setup Rust
         uses: leynos/shared-actions/.github/actions/setup-rust@d0c2585d9e144775e4ec9fe26e7eeb03c14844dd
         with:
+          install-mold: 'true'
           expect-cache: any
-      - name: Install mold linker
+      - name: Install pinned linker
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          # mold accelerates dev builds; coverage uses lld for llvm-tools compatibility.
+          # The pinned linker accelerates dev builds; coverage uses lld for llvm-tools compatibility.
           sudo apt-get update \
             && sudo apt-get install --yes --no-install-recommends clang lld mold
+      - name: Install build tools
+        run: make install-build-tools
+      - name: Check coverage compiler environment
+        run: |
+          if [ "${CARGO_ENCODED_RUSTFLAGS+x}" ]; then
+            echo "::error::CARGO_ENCODED_RUSTFLAGS must be unset for LLVM coverage" >&2
+            exit 1
+          fi
       - name: Log coverage linker configuration
         run: |
           echo "Coverage linker: clang"
@@ -81,8 +90,8 @@ jobs:
           CFLAGS: -fuse-ld=lld
           LDFLAGS: -fuse-ld=lld
         with:
-          output-path: lcov.info
-          format: lcov
+          output-path: coverage.xml
+          format: cobertura
           with-ratchet: 'true'
       # No env binds the token. The uploader is a composite action: a token in
       # its step's env would reach its nested upload-artifact and cache steps
@@ -98,7 +107,7 @@ jobs:
         if: steps.codescene-token.outputs.available == 'true' && github.ref == 'refs/heads/main'
         uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@d0c2585d9e144775e4ec9fe26e7eeb03c14844dd
         with:
-          format: lcov
-          path: lcov.info
+          format: cobertura
+          path: coverage.xml
           mode: upload
           access-token: ${{ secrets.CS_ACCESS_TOKEN }}

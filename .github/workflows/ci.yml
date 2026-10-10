@@ -20,15 +20,19 @@ jobs:
       - name: Setup Rust
         uses: leynos/shared-actions/.github/actions/setup-rust@d0c2585d9e144775e4ec9fe26e7eeb03c14844dd
         with:
+          install-mold: 'true'
           expect-cache: any
-      - name: Install mold linker
+      - name: Install pinned linker
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
-          # mold accelerates dev builds; coverage uses lld for llvm-tools compatibility.
+          # setup-rust installs the pinned linker; coverage uses lld for llvm-tools
+          # compatibility.
           sudo apt-get update \
-            && sudo apt-get install --yes --no-install-recommends clang lld mold
+            && sudo apt-get install --yes --no-install-recommends clang lld
+      - name: Install build-standard wrapper
+        run: make install-build-tools
       - name: Install mdtablefix
         # `make check-fmt` runs `mdtablefix --check --git`; 0.6.0 is the
         # first release with `--check` and `--git`.
@@ -65,16 +69,18 @@ jobs:
         if: github.actor != 'dependabot[bot]'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: '3.x'
+          python-version: '3.14'
       - name: Install Whitaker
         uses: leynos/shared-actions/.github/actions/install-whitaker@d0c2585d9e144775e4ec9fe26e7eeb03c14844dd
         with:
-          cranelift: true
+          cranelift: 'false'
       - name: Audit dependencies
         if: github.actor != 'dependabot[bot]'
         run: make audit
       - name: Lint
         run: make lint
+      - name: Typecheck
+        run: make typecheck
       - name: Workflow contract tests
         run: make test-workflow-contracts
       - name: Log coverage linker configuration
@@ -83,6 +89,13 @@ jobs:
           echo "Coverage RUSTFLAGS: -C link-arg=-fuse-ld=lld"
           echo "Coverage CFLAGS: -fuse-ld=lld"
           echo "Coverage LDFLAGS: -fuse-ld=lld"
+      - name: Check coverage compiler flag isolation
+        if: github.event_name == 'pull_request'
+        run: |
+          if [[ ${CARGO_ENCODED_RUSTFLAGS+x} ]]; then
+            echo "::error::CARGO_ENCODED_RUSTFLAGS must be unset for LLVM coverage" >&2
+            exit 1
+          fi
       # Pull requests only: main's push is measured by coverage-main.yml, the
       # one workflow that writes the ratchet baseline. The lane publishes no
       # artefact and never contacts CodeScene.
@@ -95,7 +108,7 @@ jobs:
           CFLAGS: -fuse-ld=lld
           LDFLAGS: -fuse-ld=lld
         with:
-          output-path: lcov.info
-          format: lcov
+          output-path: coverage.xml
+          format: cobertura
           with-ratchet: 'true'
           publish-artefact: 'false'

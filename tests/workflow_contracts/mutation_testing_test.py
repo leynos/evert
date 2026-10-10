@@ -3,44 +3,66 @@
 The executable logic lives in the ``leynos/shared-actions`` reusable
 workflow, which carries its own unit and integration tests; evert's
 caller is declarative configuration. These tests parse the caller with
-PyYAML and assert the contract it must uphold: the caller references the
-correct reusable workflow at a commit SHA, and the surrounding
-permissions, triggers, and inputs are not lost. Drift (repointing the
-`uses:` ref at a branch, widening permissions, or losing the feature and
-linker configuration) fails CI on the pull request rather than surfacing
-in a scheduled or manual run. Dependabot owns the SHA value; these tests
-do not pin it.
+PyYAML and assert the contract it must uphold: the caller references a
+reviewed full-SHA revision, and the surrounding permissions, triggers,
+and inputs are not lost. A proposed pin change needs source review before
+it is added to the allowlist, so CI catches an unreviewed Dependabot
+repin before a scheduled or manual run.
 
 Run via ``make test-workflow-contracts``.
 """
 
-from __future__ import annotations
-
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOW_PATH = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "mutation-testing.yml"
+    Path(__file__).resolve().parents[2]
+    / ".github"
+    / "workflows"
+    / "mutation-testing.yml"
 )
 
-#: Matches the reusable workflow path pinned to a full 40-hex commit SHA,
-#: without asserting which SHA. Dependabot owns the SHA value.
+#: The reusable-workflow revisions whose `install-mold` input and forwarding
+#: were checked in merged source. Shared-actions #545 added the input and
+#: forwards it to Setup Rust; Dependabot proposals need that source review
+#: before another SHA is added here.
+_REVIEWED_SHARED_ACTION_PIN_PARTS = (
+    "d0c2585d9e",
+    "144775e4ec",
+    "9fe26e7eeb",
+    "03c14844dd",
+)
+REVIEWED_SHARED_ACTION_PINS = frozenset({"".join(_REVIEWED_SHARED_ACTION_PIN_PARTS)})
+_OLD_SHARED_ACTION_PIN_PARTS = (
+    "22c1a57865",
+    "e42b",
+    "a7e2ca4f88",
+    "ae49fa6f81",
+    "f58013",
+)
+
+#: Require a complete, lowercase commit SHA in the expected reusable-workflow
+#: path before checking it against the source-reviewed allowlist.
 USES_RE = re.compile(
-    r"^leynos/shared-actions/\.github/workflows/mutation-cargo\.yml@[0-9a-f]{40}$"
+    r"^leynos/shared-actions/\.github/workflows/mutation-cargo\.yml@(?P<pin>[0-9a-f]{40})$"
 )
 
 #: The exact caller configuration: mirror the CI baseline's
-#: --all-features and install the clang and mold linker set that
-#: .cargo/config.toml requires on x86_64-unknown-linux-gnu.
+#: --all-features and install the Clang and pinned linker set that
+#: .cargo/config.toml requires on supported native Linux targets.
 EXPECTED_WITH = {
     "extra-args": "--all-features",
     "setup-commands": (
         "export DEBIAN_FRONTEND=noninteractive\n"
         "sudo apt-get update\n"
-        "sudo apt-get install --yes --no-install-recommends clang lld mold\n"
+        "sudo apt-get install --yes --no-install-recommends clang lld\n"
+        "make install-build-tools\n"
+        'echo "$HOME/.local/bin" >> "$GITHUB_PATH"\n'
     ),
+    "install-mold": "true",
 }
 
 
@@ -67,19 +89,71 @@ def _mutation_job(workflow: dict[str, object]) -> dict[str, object]:
     return jobs["mutation"]
 
 
-def test_uses_reference_is_pinned_to_a_commit_sha() -> None:
-    """The job must call mutation-cargo.yml pinned to a full commit SHA.
-
-    The SHA value itself is not asserted: Dependabot owns bumping it, and
-    a lockstep exact-match assertion would fail CI on every routine bump.
-    """
-    uses = _mutation_job(_load()).get("uses")
-    assert uses is not None, "jobs.mutation.uses is missing"
-    assert USES_RE.match(uses), (
-        f"jobs.mutation.uses must reference mutation-cargo.yml pinned to a "
-        f"full 40-character lowercase hex commit SHA, not a branch or tag: "
-        f"{uses!r}"
+def _assert_reviewed_action_pin(uses: object) -> None:
+    """Require the reusable action's exact path and a reviewed full SHA."""
+    assert isinstance(uses, str), f"jobs.mutation.uses must be a string, got {uses!r}"
+    match = USES_RE.fullmatch(uses)
+    assert match is not None, (
+        "jobs.mutation.uses must reference mutation-cargo.yml pinned to a "
+        f"full 40-character lowercase hex commit SHA, not a branch or tag: {uses!r}"
     )
+    pin = match.group("pin")
+    assert pin in REVIEWED_SHARED_ACTION_PINS, (
+        f"shared-actions pin {pin} has not been reviewed for the required "
+        "install-mold input and forwarding"
+    )
+
+
+def _assert_mutation_job_contract(job: dict[str, object]) -> None:
+    """Require an approved action revision and its exact caller inputs."""
+    _assert_reviewed_action_pin(job.get("uses"))
+    with_block = job.get("with")
+    assert with_block == EXPECTED_WITH, (
+        f"jobs.mutation.with must be exactly {EXPECTED_WITH!r}, got {with_block!r}"
+    )
+
+
+def test_uses_reference_is_pinned_to_a_commit_sha() -> None:
+    """The job must call the source-reviewed shared action revision."""
+    uses = _mutation_job(_load()).get("uses")
+    _assert_reviewed_action_pin(uses)
+
+
+@pytest.mark.parametrize(
+    "pin",
+    [
+        pytest.param("".join(_OLD_SHARED_ACTION_PIN_PARTS), id="old-pin"),
+        pytest.param("0".zfill(40), id="unreviewed-full-sha"),
+    ],
+)
+def test_unreviewed_action_pin_mutation_is_rejected(pin: str) -> None:
+    """Old and otherwise valid SHA pins fail until their source is reviewed."""
+    job = _mutation_job(_load())
+    job["uses"] = "leynos/shared-actions/.github/workflows/mutation-cargo.yml@" + pin
+    with pytest.raises(AssertionError, match="has not been reviewed"):
+        _assert_mutation_job_contract(job)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "value"),
+    [
+        pytest.param("drop", None, id="missing-install-mold"),
+        pytest.param("change", "false", id="install-mold-disabled"),
+    ],
+)
+def test_linker_provisioning_input_mutation_is_rejected(
+    mutation: str, value: str | None
+) -> None:
+    """Removing or disabling the shared linker provisioning input fails."""
+    job = _mutation_job(_load())
+    with_block = job["with"]
+    assert isinstance(with_block, dict), "the job `with` block must be a mapping"
+    if mutation == "drop":
+        del with_block["install-mold"]
+    else:
+        with_block["install-mold"] = value
+    with pytest.raises(AssertionError, match=r"jobs\.mutation\.with must be exactly"):
+        _assert_mutation_job_contract(job)
 
 
 def test_job_permissions_are_exactly_least_privilege() -> None:
@@ -123,6 +197,7 @@ def test_triggers_keep_schedule_and_plain_dispatch() -> None:
     )
     assert "workflow_dispatch" in triggers, "on.workflow_dispatch is missing"
     dispatch = triggers.get("workflow_dispatch") or {}
+    assert isinstance(dispatch, dict), "on.workflow_dispatch must be a mapping"
     inputs = dispatch.get("inputs") or {}
     assert "branch" not in inputs, (
         "on.workflow_dispatch must not declare a branch input; the Actions "
@@ -131,11 +206,5 @@ def test_triggers_keep_schedule_and_plain_dispatch() -> None:
 
 
 def test_with_block_carries_the_caller_configuration() -> None:
-    """The caller passes exactly the documented feature and linker setup."""
-    with_block = _mutation_job(_load()).get("with")
-    assert isinstance(with_block, dict), "jobs.mutation.with is missing"
-    assert with_block == EXPECTED_WITH, (
-        f"jobs.mutation.with must be exactly {EXPECTED_WITH!r} "
-        f"(the CI --all-features baseline plus the clang/mold linker "
-        f"setup), got {with_block!r}"
-    )
+    """The caller passes reviewed linker provisioning and its setup commands."""
+    _assert_mutation_job_contract(_mutation_job(_load()))

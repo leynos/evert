@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc f64dc4129b43d0405701fee139a96815620a0b100679603b417c3191928e3b88 # shrinks to ordinary_flags = ["-C"], forbidden_index = Some(0)

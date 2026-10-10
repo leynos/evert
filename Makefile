@@ -1,5 +1,10 @@
 .PHONY: help all clean test build release coverage lint fmt check-fmt \
-	markdownlint nixie audit rust-audit spelling test-workflow-contracts
+	markdownlint nixie audit rust-audit spelling test-workflow-contracts \
+	typecheck install-build-tools check-build-tools lint-clippy lint-whitaker \
+	lint-python typecheck-python typecheck-rust
+
+# Keep the composite gates sequential even when a caller uses `make -j`.
+.NOTPARALLEL: all lint typecheck
 
 SHELL := bash
 
@@ -11,7 +16,7 @@ BUILD_JOBS ?=
 RUST_FLAGS ?=
 RUST_FLAGS := -D warnings $(RUST_FLAGS)
 RUSTDOC_FLAGS ?=
-RUSTDOC_FLAGS := -D warnings $(RUSTDOC_FLAGS)
+RUSTDOC_FLAGS := --cfg docsrs -D warnings $(RUSTDOC_FLAGS)
 CARGO_FLAGS ?= --all-targets --all-features
 CLIPPY_FLAGS ?= $(CARGO_FLAGS) -- $(RUST_FLAGS)
 TEST_FLAGS ?= $(CARGO_FLAGS)
@@ -29,65 +34,250 @@ MDTABLEFIX_SELECT = --git --include-untracked
 MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 NIXIE ?= nixie
 WHITAKER ?= whitaker
+WHITAKER_PACKAGES ?= --all
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 
-# The CV-005 CodeScene contracts live in shared-actions and run from a full
-# commit, so a fix is a pin bump. `.github/cv005.toml` holds this repository's
-# only parameters.
+# The CPython baseline for repository scripts, modules, tests, and Python
+# tools. Bump it with `target-version` and `py-version` in pyproject.toml;
+# contract tests keep the settings in sync.
+PYTHON_BASELINE ?= 3.14
+
+# The Python lint gateway mirrors leynos/netsuke. Each tool is pinned so `make`
+# and CI run the same release: rule sets differ between releases, and an
+# unpinned install fails the gate without any code change. Bump deliberately
+# and fix new findings in the same commit.
+RUFF_VERSION ?= 0.16.4
+RUFF = $(UV_ENV) $(UV) tool run --managed-python \
+	--python $(PYTHON_BASELINE) \
+	--from ruff==$(RUFF_VERSION) ruff
+PYLINT_VERSION ?= 4.0.9
+# Pylint's default messages remain enabled. The same invocation loads the
+# df12 plugin and enables every message published by the pinned release.
+PYTEST_VERSION ?= 9.0.2
+PYTHON_DEPENDENCIES = --with pytest==$(PYTEST_VERSION) --with 'pyyaml>=6'
+# The df12 house lints need CPython 3.14: they parse syntax older runtimes
+# cannot, and the baseline-gated messages (R9112, C9112) key off the
+# `py-version` in pyproject.toml. They run through `uv tool run` so the
+# repository never needs a project virtual environment for a Rust
+# contributor's sake.
+# Pin the commit, not the tag: uv resolves a commit from its cache without the
+# network, so the gate keeps working offline (a tag forces a fetch on every run
+# and fails whenever GitHub is unreachable), and a moved tag cannot change what
+# runs. This is the commit of the v0.3.0 release.
+DF12_PYTHON_LINTS_REF ?= 4cf41736cce2f7ba2778882a5c629c044568a0e5
+DF12_PYTHON_LINTS = git+https://github.com/leynos/df12-python-lints.git@$(DF12_PYTHON_LINTS_REF)
+# Keep this list aligned with every message in the pinned v0.3.0 plugin.
+DF12_PYLINT_MESSAGES = R9101,C9102,R9103,R9104,C9105,C9106,C9107,R9108,R9109,R9110,R9111,R9112,C9112
+PYLINT = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
+	--from 'pylint==$(PYLINT_VERSION)' --with '$(DF12_PYTHON_LINTS)' \
+	$(PYTHON_DEPENDENCIES) pylint --load-plugins=df12_python_lints \
+	--enable=$(DF12_PYLINT_MESSAGES)
+AMBRLEAKS = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
+	--from '$(DF12_PYTHON_LINTS)' ambrleaks
+# Interrogate is a documentation-coverage gate only; the repository is not a
+# Python distribution and needs no project metadata.
+INTERROGATE_VERSION ?= 1.7.0
+INTERROGATE = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
+	--from 'interrogate==$(INTERROGATE_VERSION)' interrogate --fail-under 100
+# Pin ty so `make` and CI invoke the same typechecker release. ty is pre-1.0
+# and its diagnostics shift between releases, so an unpinned install can fail
+# the gate without any code change. Bump deliberately and fix the new
+# diagnostics in the same commit.
+TY_VERSION ?= 0.0.74
+# ty resolves third-party imports from the environment `uv tool run` builds, so
+# the packages the Python sources import are installed beside it. pytest is
+# pinned to keep ty's view of its types stable; PyYAML is a floor, as in
+# `test-workflow-contracts`.
+TY_DEPENDENCIES = $(PYTHON_DEPENDENCIES)
+# Pass all repository-owned Python sources to each gateway. `.github` includes
+# workflow and action modules; the remaining roots cover all tests, scripts,
+# and both common benchmark directory names. Cache, vendor, and build trees
+# are pruned before files reach any tool.
+PYTHON_SOURCE_ROOTS ?= .github tests scripts benches benchmarks
+PYTHON_EXISTING_SOURCE_ROOTS = $(wildcard $(PYTHON_SOURCE_ROOTS))
+PYTHON_PRUNED_DIRECTORIES = \
+	-name .git -prune -o -name .venv -prune -o -name venv -prune -o \
+	-name .uv-cache -prune -o -name .uv-tools -prune -o \
+	-name target -prune -o -name vendor -prune -o -name node_modules -prune -o \
+	-name __pycache__ -prune -o -name .pytest_cache -prune -o \
+	-name .mypy_cache -prune -o -name .ruff_cache -prune -o
+PYTHON_SOURCES = $(strip $(shell find $(PYTHON_EXISTING_SOURCE_ROOTS) \
+	$(PYTHON_PRUNED_DIRECTORIES) -type f -name '*.py' -print | sort))
+# Workflow contract tests import sibling modules as top-level modules, while ty
+# otherwise follows package imports only. Add every existing source root.
+PYTHON_IMPORT_ROOTS = $(addprefix --extra-search-path ,$(wildcard $(PYTHON_SOURCE_ROOTS)))
+
+# CV-005 CodeScene contracts run from the shared-actions commit pinned here.
+# `.github/cv005.toml` carries this repository's selection parameters.
 CV005_CONTRACTS_REF ?= 88977798a5c3bae1549afb99642529488c665276
-CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --python 3.13 \
+CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --managed-python \
+	--python $(PYTHON_BASELINE) \
 	--from 'git+https://github.com/leynos/shared-actions@$(CV005_CONTRACTS_REF)\#subdirectory=packages/cv005-contracts' \
 	cv005-contracts
 
-TYPOS_CONFIG_BUILDER_VERSION ?= v0.1.3
-TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --python 3.14 --from \
-	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_VERSION)" \
+# Pinned by commit, not by tag: uv resolves a commit from its cache without the
+# network, so the spelling gate keeps working offline (a tag forces a fetch on
+# every run and fails whenever GitHub is unreachable), and a moved tag cannot
+# change what runs. This is the commit of the v0.1.3 release.
+TYPOS_CONFIG_BUILDER_REF ?= c8a4f95d7cf7f6a1b7517f2775d122d47d5721eb
+TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --managed-python \
+	--python $(PYTHON_BASELINE) --from \
+	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_REF)" \
 	typos-config-builder
 
-# The standard build, test, lint, and typecheck targets below use the
-# opt-in dev-fast profile (Cranelift plus mold) defined in the Wave 1
-# block near the end of this file. Declared here too so the standard
-# targets can see it regardless of where in the file they sit.
-DEV_FAST_CONFIG ?= tools/dev-fast/config.toml
+# The development build standard (concordat rule `rust-build-defaults`):
+# On a supported GNU/Linux host, parallel rustc and `mold` apply to the
+# matching native x86_64 or aarch64 target; rustc uses its LLVM backend.
+# Route each Cargo command by its effective target. A sole exact native
+# --target takes precedence; commands without it follow CARGO_BUILD_TARGET.
+# Assigned RUSTFLAGS replace Cargo's target table, so each route restates the
+# standard flags. Coverage and release retain their explicit LLVM routes.
+BUILD_HOST_OS := $(shell uname -s)
+BUILD_HOST_ARCH := $(shell uname -m)
+NATIVE_CARGO_TARGET := $(if $(filter x86_64 aarch64,$(BUILD_HOST_ARCH)),$(BUILD_HOST_ARCH)-unknown-linux-gnu,)
+
+# Return the value of the first --target option in a flag list. Unknown forms
+# and empty joined values are sentinels, so they fail the exact-target check.
+define cargo_target_option_value
+$(if $(strip $1),$(if $(filter --target-dir --target-dir=%,$(firstword $1)),$(call cargo_target_option_value,$(wordlist 2,$(words $1),$1)),$(if $(filter --target,$(firstword $1)),$(if $(word 2,$1),$(word 2,$1),__missing__),$(if $(filter --target=%,$(firstword $1)),$(if $(patsubst --target=%,%,$(firstword $1)),$(patsubst --target=%,%,$(firstword $1)),__missing__),$(if $(filter --target%,$(firstword $1)),__malformed__,$(call cargo_target_option_value,$(wordlist 2,$(words $1),$1)))))),)
+endef
+
+# No target is valid; an explicit target is valid only when it is the sole,
+# well-formed option and names this native target. Cargo's --target-dir is a
+# separate output-directory option and does not select a compilation target.
+define cargo_target_option_words
+$(filter-out --target-dir --target-dir=%,$(filter --target%,$1))
+endef
+
+# Keep rustc-only arguments after Cargo's literal `--` out of target routing.
+define cargo_words_before_separator
+$(if $(strip $1),$(if $(filter --,$(firstword $1)),,$(firstword $1) $(call cargo_words_before_separator,$(wordlist 2,$(words $1),$1))))
+endef
+
+define cargo_target_route_supported
+$(if $(call cargo_target_option_words,$1),$(if $(filter 1,$(words $(call cargo_target_option_words,$1))),$(if $(filter $(NATIVE_CARGO_TARGET),$(call cargo_target_option_value,$1)),yes,),),yes)
+endef
+
+define cargo_effective_target_supported
+$(if $(call cargo_target_option_words,$1),$(call cargo_target_route_supported,$1),$(if $(filter-out $(NATIVE_CARGO_TARGET),$(strip $(CARGO_BUILD_TARGET))),,yes))
+endef
+
+# Pass each recipe's actual target arguments: empty for build, rustdoc and
+# doctest; CARGO_FLAGS for typecheck; TEST_FLAGS for the test runner. Target
+# selection stops at each command's first literal `--` separator.
+define standard_rustflags_for
+$(if $(and $(filter Linux,$(BUILD_HOST_OS)),$(filter x86_64 aarch64,$(BUILD_HOST_ARCH)),$(call cargo_effective_target_supported,$1)),-Zthreads=8 -Clinker=evert-clang-mold -Clink-arg=-fuse-ld=mold)
+endef
+
+STANDARD_RUSTFLAGS = $(call standard_rustflags_for,)
+CARGO_FLAGS_STANDARD_RUSTFLAGS = $(call standard_rustflags_for,$(call cargo_words_before_separator,$(CARGO_FLAGS)))
+TEST_FLAGS_STANDARD_RUSTFLAGS = $(call standard_rustflags_for,$(call cargo_words_before_separator,$(TEST_FLAGS)))
+CLIPPY_FLAGS_STANDARD_RUSTFLAGS = $(call standard_rustflags_for,$(call cargo_words_before_separator,$(CLIPPY_FLAGS)))
+define gate_rustflags_with
+$(if $1,env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="$${RUSTFLAGS:+$$RUSTFLAGS }$(RUST_FLAGS) $1",bash -c 'make_flags=$$1; shift; effective_flags="$${RUSTFLAGS:+$$RUSTFLAGS }$$make_flags"; set -f; previous=; for flag in $$effective_flags; do bad=; if [[ "$$flag" == -Zcodegen-backend=cranelift* || "$$flag" == -Zthreads=8* || "$$flag" == -Clink-arg=-fuse-ld=mold ]]; then bad=$$flag; fi; if [[ "$$flag" == -Clinker=evert-clang-mold || "$$flag" == -Clinker=*/evert-clang-mold || "$$flag" == -Clinker=ld.mold || "$$flag" == -Clinker=*/ld.mold ]]; then bad=$$flag; fi; if [[ "$$previous:$$flag" == -Z:codegen-backend=cranelift* || "$$previous:$$flag" == -Z:codegen-backend || "$$previous:$$flag" == -Z:codegen-backend= || "$$previous:$$flag" == -Z:threads=8* || "$$previous:$$flag" == -Z:threads || "$$previous:$$flag" == -Z:threads= || "$$previous:$$flag" == -Zcodegen-backend:cranelift* || "$$previous:$$flag" == -Zthreads:8* ]]; then bad="$$previous $$flag"; fi; if [[ "$$previous:$$flag" == -C:linker=evert-clang-mold || "$$previous:$$flag" == -C:linker=*/evert-clang-mold || "$$previous:$$flag" == -C:linker=ld.mold || "$$previous:$$flag" == -C:linker=*/ld.mold || "$$previous:$$flag" == -Clinker:evert-clang-mold || "$$previous:$$flag" == -Clinker:*/evert-clang-mold || "$$previous:$$flag" == -Clinker:ld.mold || "$$previous:$$flag" == -Clinker:*/ld.mold ]]; then bad="$$previous $$flag"; fi; if [[ "$$previous:$$flag" == -C:link-arg=-fuse-ld=mold || "$$previous:$$flag" == -Clink-arg:-fuse-ld=mold ]]; then bad="$$previous $$flag"; fi; if [[ -n "$$bad" ]]; then printf "explicit non-native Cargo route rejects incompatible flag from inherited RUSTFLAGS or Make RUST_FLAGS: %s\n" "$$bad" >&2; exit 2; fi; previous=$$flag; done; exec env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="$$effective_flags" "$$@"' _ '$(subst ','"'"',$(RUST_FLAGS))')
+endef
+GATE_RUSTFLAGS = $(call gate_rustflags_with,$(CARGO_FLAGS_STANDARD_RUSTFLAGS))
+TEST_GATE_RUSTFLAGS = $(call gate_rustflags_with,$(TEST_FLAGS_STANDARD_RUSTFLAGS))
+BASE_GATE_RUSTFLAGS = $(call gate_rustflags_with,$(STANDARD_RUSTFLAGS))
+CLIPPY_GATE_RUSTFLAGS = $(call gate_rustflags_with,$(CLIPPY_FLAGS_STANDARD_RUSTFLAGS))
+ifneq ($(filter x86_64 aarch64,$(BUILD_HOST_ARCH)),)
+ifeq ($(GITHUB_ACTIONS)-$(BUILD_HOST_OS),true-Linux)
+BUILD_TOOLS_PREFIX ?= $(shell \
+	linker=$$(command -v ld.mold 2>/dev/null); \
+	prefix=$${linker%/bin/ld.mold}; \
+	if [[ -n "$$RUNNER_TOOL_CACHE" && "$$linker" == "$$RUNNER_TOOL_CACHE"/mold/*/$(BUILD_HOST_ARCH)/bin/ld.mold ]]; then \
+		printf '%s' "$$prefix"; \
+	fi)
+ifeq ($(strip $(BUILD_TOOLS_PREFIX)),)
+$(error GITHUB_ACTIONS=true but setup-rust must put its verified Linux linker on PATH before Make runs)
+endif
+endif
+endif
+BUILD_TOOLS_PREFIX ?= $(HOME)/.local
+export BUILD_TOOLS_PREFIX
+export PATH := $(BUILD_TOOLS_PREFIX)/bin:$(PATH)
+RELEASE_RUSTFLAGS = env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="$${RUSTFLAGS:+$$RUSTFLAGS }"
+COVERAGE_ENV = env -u CARGO_ENCODED_RUSTFLAGS
 
 build: target/debug/$(TARGET) ## Build debug binary
 release: target/release/$(TARGET) ## Build release binary
 
-all: check-fmt lint test spelling test-workflow-contracts ## Perform a comprehensive check of code
+all: check-fmt lint typecheck test spelling test-workflow-contracts ## Perform a comprehensive check of code
 
-clean: ## Remove build artifacts
+clean: ## Remove build artefacts
 	$(CARGO) clean
 
-test: ## Run tests with warnings treated as errors
-	RUSTFLAGS="$(RUST_FLAGS)" $(CARGO) --config "$(DEV_FAST_CONFIG)" $(TEST_CMD) $(TEST_FLAGS) $(BUILD_JOBS)
-	RUSTFLAGS="$(RUST_FLAGS)" $(CARGO) --config "$(DEV_FAST_CONFIG)" test --doc --workspace --all-features
+test: check-build-tools ## Run tests with warnings treated as errors
+	$(TEST_GATE_RUSTFLAGS) $(CARGO) $(TEST_CMD) $(TEST_FLAGS) $(BUILD_JOBS)
+	$(BASE_GATE_RUSTFLAGS) $(CARGO) test --doc --workspace --all-features $(BUILD_JOBS)
 
-test-workflow-contracts: ## Validate the mutation-testing and CodeScene coverage workflow contracts
+test-workflow-contracts: ## Validate the shared and local workflow contracts
 	$(CV005_CONTRACTS) check --repository .
-	uv run --with 'pytest>=8' --with 'pyyaml>=6' pytest tests/workflow_contracts -q
+	$(UV_ENV) $(UV) run --no-project --managed-python --python $(PYTHON_BASELINE) \
+		$(PYTHON_DEPENDENCIES) pytest tests/workflow_contracts -q
 
-target/%/$(TARGET): ## Build binary in debug or release mode
-	$(CARGO) $(if $(findstring release,$(@)),,--config "$(DEV_FAST_CONFIG)") build $(BUILD_JOBS) $(if $(findstring release,$(@)),--release) --bin $(TARGET)
+target/debug/$(TARGET): | check-build-tools ## Build the development binary
+	$(BASE_GATE_RUSTFLAGS) $(CARGO) build $(BUILD_JOBS) --bin $(TARGET)
+
+target/release/$(TARGET): ## Build the release binary with stable Rust and LLVM
+	$(RELEASE_RUSTFLAGS) $(CARGO) +stable build $(BUILD_JOBS) --release --bin $(TARGET)
 
 coverage: ## Generate lcov coverage with lld for llvm-tools compatibility
 	@echo "coverage linker flags: $(COVERAGE_LINKER_FLAGS)"
-	CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang \
-		RUSTFLAGS="$(COVERAGE_RUST_FLAGS)" \
+	$(COVERAGE_ENV) CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang \
+		RUSTFLAGS="$${RUSTFLAGS:+$$RUSTFLAGS }$(COVERAGE_RUST_FLAGS)" \
 		CFLAGS="$(COVERAGE_LINKER_FLAGS)" \
 		LDFLAGS="$(COVERAGE_LINKER_FLAGS)" \
 		$(CARGO) llvm-cov --lcov --output-path lcov.info $(TEST_FLAGS)
 
-lint: ## Run rustdoc, Clippy, and the Whitaker Dylint suite with warnings denied
-	RUSTDOCFLAGS="$(RUSTDOC_FLAGS)" $(CARGO) --config "$(DEV_FAST_CONFIG)" doc --no-deps
-	$(CARGO) --config "$(DEV_FAST_CONFIG)" clippy $(CLIPPY_FLAGS)
-	RUSTFLAGS="$(RUST_FLAGS)" $(WHITAKER) --all -- $(CARGO_FLAGS)
+lint: lint-clippy lint-whitaker lint-python ## Run rustdoc, Clippy, Whitaker, and the Python linters with warnings denied
 
-typecheck: ## Type-check without building
-	RUSTFLAGS="$(RUST_FLAGS)" $(CARGO) --config "$(DEV_FAST_CONFIG)" check $(CARGO_FLAGS)
+# Keep Whitaker on the Clippy route's explicit prerequisite edge so `make -j`
+# cannot overlap the two compiler gates.
+lint-whitaker: lint-clippy
+	env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="-D warnings" $(WHITAKER) $(WHITAKER_PACKAGES) -- $(CARGO_FLAGS)
+
+# Python lints run last, after the Rust compiler gates, and need no Rust
+# toolchain. Every command receives the same source roots so Ruff, Pylint, the
+# df12 house lints, ambrleaks, and Interrogate judge one boundary.
+lint-python: ## Run Ruff, Pylint, the df12 house lints, ambrleaks, and Interrogate over the Python sources
+	@if [ -z "$(PYTHON_SOURCES)" ]; then \
+		echo "lint-python: no Python sources under $(PYTHON_SOURCE_ROOTS)"; \
+	else \
+		set -e; \
+		$(RUFF) check $(PYTHON_SOURCES); \
+		$(PYLINT) $(PYTHON_SOURCES); \
+		$(AMBRLEAKS) $(PYTHON_SOURCES); \
+		$(INTERROGATE) $(PYTHON_SOURCES); \
+	fi
+
+lint-clippy: check-build-tools ## Run rustdoc and Clippy with the development flags
+	$(BASE_GATE_RUSTFLAGS) RUSTDOCFLAGS="$(RUSTDOC_FLAGS)" $(CARGO) doc --no-deps
+	$(CLIPPY_GATE_RUSTFLAGS) $(CARGO) clippy $(CLIPPY_FLAGS)
+
+# `make typecheck` is the one type gate CI needs. The build-tools preflight
+# comes first, so a missing pinned tool stops the gate before any type check
+# runs, exactly as it did when `typecheck` was Rust only.
+typecheck: check-build-tools typecheck-python typecheck-rust ## Type-check the Python and Rust sources without building
+
+typecheck-rust: check-build-tools ## Type-check the Rust sources without building
+	$(GATE_RUSTFLAGS) $(CARGO) check $(CARGO_FLAGS)
+
+# The Python half takes the same source roots as the lint gateway, so a Python
+# file cannot be linted but left untyped.
+typecheck-python: ## Typecheck the Python sources with ty
+	@if [ -z "$(PYTHON_SOURCES)" ]; then \
+		echo "typecheck-python: no Python sources under $(PYTHON_SOURCE_ROOTS)"; \
+	else \
+		$(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
+			--from ty==$(TY_VERSION) $(TY_DEPENDENCIES) \
+			ty check --python-version $(PYTHON_BASELINE) \
+			$(PYTHON_IMPORT_ROOTS) $(PYTHON_SOURCES); \
+	fi
 
 fmt: ## Format Rust and Markdown sources
-	$(CARGO) +nightly fmt --all
+	$(CARGO) fmt --all
 	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 	$(MDLINT) --fix "**/*.md"
 
@@ -98,8 +288,8 @@ check-fmt: ## Verify formatting
 markdownlint: spelling ## Lint Markdown files and enforce repository spelling
 	$(MDLINT) '**/*.md'
 
-spelling: ## Enforce en-GB-oxendict spelling in Markdown prose
-	$(TYPOS_CONFIG_BUILDER) gate --repository .
+spelling: ## Enforce en-GB-oxendict spelling across tracked files
+	$(TYPOS_CONFIG_BUILDER) gate --repository . --scope all
 
 nixie: ## Validate Mermaid diagrams
 	$(NIXIE) --no-sandbox
@@ -130,13 +320,8 @@ help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
 	awk 'BEGIN {FS=":"; printf "Available targets:\n"} {printf "  %-20s %s\n", $$1, $$2}'
 
-# Opt-in accelerated debug builds (Cranelift + mold); requires a nightly
-# toolchain. See AGENTS.md and tools/dev-fast/config.toml.
-DEV_FAST_CONFIG ?= tools/dev-fast/config.toml
+install-build-tools: ## Install the pinned nightly and linker binary
+	@scripts/install-build-tools.sh
 
-.PHONY: dev-build dev-test
-dev-build: ## Build debug binaries with Cranelift and mold
-	$(CARGO) --config "$(DEV_FAST_CONFIG)" build
-
-dev-test: ## Run tests with Cranelift and mold
-	$(CARGO) --config "$(DEV_FAST_CONFIG)" test
+check-build-tools: ## Check the development compiler and linker prerequisites
+	@scripts/check-build-tools.sh

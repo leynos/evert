@@ -1,6 +1,7 @@
-# Canonical clippy configuration for the estate.
+# Evert's Clippy configuration.
 #
-# The thresholds align with CodeScene's code-health ceilings.
+# Numeric thresholds align with the selected estate baseline. The
+# disallowed-methods list is an explicit Evert local extension.
 cognitive-complexity-threshold = 9     # default is 25
 too-many-arguments-threshold = 4       # default is 7
 too-many-lines-threshold = 70          # default is 100
@@ -8,12 +9,13 @@ excessive-nesting-threshold = 4        # default is off
 
 allow-expect-in-tests = true
 
-# Enforce the environment-injection mandate. The reason strings surface in
-# the diagnostic, so a contributor who trips one is told what to do instead.
+# Enforce environment injection at explicit boundaries. The reason strings
+# tell contributors how to replace ambient environment access.
 #
-# Sanctioned sites carry `#[expect(clippy::disallowed_methods, reason = "..")]`
-# rather than `allow`, so the expectation goes unfulfilled — and warns — once
-# the site is migrated. The backlog removes itself instead of rotting.
+# Fix violations at source. The only sanctioned `#[expect]` uses are for
+# verified macro-expansion artefacts and genuine floating-point arithmetic;
+# each requires a reason and evidence. Never use `#[allow]` or an expectation
+# to defer ordinary remediation.
 disallowed-methods = [
   { path = "std::env::var", reason = "inject an environment reader" },
   { path = "std::env::var_os", reason = "inject an environment reader" },

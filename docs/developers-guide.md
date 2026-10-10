@@ -5,7 +5,8 @@ This guide explains the contributor workflow for the generated Evert project.
 ## Local Workflow
 
 Use `make all` as the public entrypoint for formatting, linting, and tests.
-`make lint` runs rustdoc, Clippy, and Whitaker. `make test` prefers
+`make lint` runs rustdoc, Clippy, and Whitaker, then the
+[Python lint gateway](#python-lint-gateway). `make test` prefers
 `cargo nextest run` and falls back to `cargo test` when cargo-nextest is not
 available. `make audit` derives the Rust workspace root with `cargo metadata`,
 logs workspace member manifests, and runs `cargo audit` once from the workspace
@@ -28,8 +29,8 @@ duplicating the list.
 The baseline follows the estate's phase 2 Rust conventions: hygiene and
 panic-prone operations are denied outright (`unwrap_used`, `indexing_slicing`,
 `unreachable`, and similar), `pedantic` is enabled as a warning tier, and
-`missing_docs` and `missing_crate_level_docs` require real documentation rather
-than suppression.
+`missing_docs_in_private_items`, `missing_docs`, and `missing_crate_level_docs`
+require real documentation rather than suppression.
 
 Where a lint violation is a genuine, tracked deferral rather than a bug,
 annotate the site with `#[expect(clippy::<lint>, reason = "...")]`, never
@@ -48,19 +49,133 @@ The pinned nightly toolchain in `rust-toolchain.toml` supplies the `rustfmt`,
 `clippy`, and `rust-analyzer` components the baseline and this workflow depend
 on.
 
+## Python lint gateway
+
+`make lint` runs the Rust gates first and the Python gates after them, with
+warnings denied. `make lint-python` runs the Python gates on their own, and
+`make all` includes `make typecheck`. The same discovered Python file inventory
+feeds Ruff, Pylint with the df12 plugin, ambrleaks, Interrogate, and ty; the
+typecheck gateway runs ty over that inventory. In order, the lint gateway runs:
+
+- Ruff (`ruff check`), pinned by `RUFF_VERSION` (0.16.4).
+- Pylint 4.0.9 and the df12 house lints in one Pylint invocation on a managed
+  CPython 3.14 interpreter. The plugin from `leynos/df12-python-lints` is
+  pinned by the commit in `DF12_PYTHON_LINTS_REF` (release `v0.3.0`). `uv`
+  resolves a commit from its cache without the network, so the gate works
+  offline, and a moved tag cannot change what runs. Pylint's default
+  diagnostics remain enabled; the invocation does not globally disable Pylint
+  messages. `DF12_PYLINT_MESSAGES` enables all 13 message IDs published by the
+  pinned v0.3.0 plugin release; the workflow contract test keeps that list
+  complete when the pinned release changes.
+- `ambrleaks`, from the same df12 package and ref.
+- Interrogate, pinned by `INTERROGATE_VERSION` (1.7.0), with `--fail-under 100`.
+  Every module, class, function, nested function, and test needs a docstring.
+
+Rule sets differ between releases, so each tool is pinned exactly. To bump one,
+change its Makefile variable and fix the new findings in the same commit.
+
+`pyproject.toml` only configures these linters. It has no `[project]` or
+`[build-system]` table, so nothing can be built or published from it and `uv`
+never treats the repository as a Python project. It mirrors the Ruff and Pylint
+configuration of `leynos/netsuke`, which itself mirrors `leynos/episodic`; only
+path-shaped settings are local.
+
+Repository-owned Python scripts, linting, typechecking, and pytest run on
+managed CPython 3.14 through `uv`; `uv` fetches the interpreter, so
+contributors need `uv` but not a system Python 3.14. The shared CV-005 contract
+CLI also uses the managed Python 3.14 baseline. The Python baseline is
+`PYTHON_BASELINE` in the `Makefile`; CI and audit use literal `3.14`
+`setup-python` inputs, which workflow contract tests check against that
+baseline. The baseline must also agree with Ruff's `target-version` (`py314`)
+and Pylint's `py-version` in `pyproject.toml`.
+
+The shared discovered inventory covers Python files recursively throughout
+`.github/` (including workflows and actions), `tests/`, `scripts/`,
+`benchmarks/`, and `benches/`. Only files that exist are passed to the tools,
+so new workflow, action, script, and benchmark modules are covered as soon as
+they are added. Today only `tests/workflow_contracts/` holds Python.
+
+Do not silence a Python lint in source: no `# noqa`, `# pylint: disable`, or
+`# type: ignore`. Fix the code. Ruff has two narrowly documented
+`extend-ignore` entries for last-resort conflicts between its docstring rules:
+D211 conflicts with D203, and D212 conflicts with D213. These rule-level
+exceptions are separate from the only two per-file exemptions, both configured
+in `pyproject.toml`:
+
+- Ruff's `assert` rule (`S101`) for files under `tests/`, because pytest relies
+  on plain `assert` statements and rewrites them to report the compared values.
+- Ruff's subprocess import and call rules (`S404` and `S603`) for
+  `tests/workflow_contracts/command_runner.py` alone. No code change satisfies
+  those two rules, and some contracts can only be proved by running the real
+  tools, so all process spawning goes through that one helper. It uses no
+  shell, takes a fixed argument list, and resolves the executable itself;
+  `command_runner_test.py` holds those properties. Every other module that
+  imports `subprocess` fails the gate.
+
+Docstrings follow the numpy convention (Ruff's `D` and `DOC` rules). The line
+length is 88, and a module may have at most 400 lines, matching the
+repository's file-size ceiling.
+
+`tests/workflow_contracts/python_lint_gateway_test.py` guards the wiring. It
+fails if a Python file sits outside the source roots, if the three baseline
+settings disagree, if `lint` stops depending on `lint-python`, if a tool is
+missing from the recipe, or if a tool version or the df12 ref is not an exact
+pin. It also guards the [Python typecheck](#python-typechecking).
+
+## Python typechecking
+
+`make typecheck` runs the build-tools preflight, so a missing pinned tool stops
+the gate before any type check, then type-checks the Python sources with ty,
+then runs the Rust `cargo check` over all targets and features.
+`make typecheck-python` and `make typecheck-rust` run only one half; the Rust
+contract tests that run the Cargo route for real use `typecheck-rust`, so ty
+output cannot reach the output they compare. CI runs `make typecheck` in a
+`Typecheck` step right after `Lint` in `.github/workflows/ci.yml`.
+
+ty is pinned exactly by `TY_VERSION` (0.0.74) in the `Makefile`. It is pre-1.0
+and its diagnostics shift between releases, so to bump it, change `TY_VERSION`
+and fix any new diagnostics in the same commit. It runs through `uv tool run`
+on CPython 3.14 (`PYTHON_BASELINE`), with `--python-version` set to the same
+baseline. `TY_DEPENDENCIES` installs the packages the sources import (pytest
+9.0.2 and PyYAML) into the tool environment so ty can resolve them.
+
+The check covers `PYTHON_SOURCES`, built from the same `PYTHON_SOURCE_ROOTS` as
+the linters, so a Python file cannot be linted yet left untyped. The modules in
+`tests/workflow_contracts/` import their siblings through the directory pytest
+puts on `sys.path`, which ty does not follow. `PYTHON_IMPORT_ROOTS` therefore
+passes each existing source root as an `--extra-search-path` root.
+
+Do not silence a type error: no `# type: ignore`, no `# ty: ignore`, and no
+`typing.Any` escape hatches. Workflow YAML loads as loosely typed objects, so
+tests narrow it with the runtime-validated helpers in
+`tests/workflow_contracts/workflow_contract_support.py`:
+
+- `mapping_at(node, *path)` returns the live mapping reached by following the
+  keys in `path`.
+- `sequence_at(node, *path)` returns the live list reached the same way.
+
+Both raise `WorkflowError` naming the path when a hop is missing or of the
+wrong kind. Ordinary `isinstance` narrowing is also acceptable; bind the value
+to a local first. Use `typing.cast` only directly after a runtime check that
+proves the type. `workflow_contract_support_test.py` covers the two helpers.
+
+`python_lint_gateway_test.py` fails if `typecheck` stops depending on
+`typecheck-python`, if `TY_VERSION` is not an exact pin, if the
+`typecheck-python` recipe loses ty, the pin, the baselines, or the shared
+source roots, or if CI stops running `make typecheck`.
+
 ## Spelling policy
 
 `make all` and `make markdownlint` enforce en-GB-oxendict spelling by running
-`make spelling`, which invokes the `typos-config-builder` gate pinned by
-`TYPOS_CONFIG_BUILDER_VERSION` in the `Makefile`. The gate regenerates
-`typos.toml` from the live shared dictionary and this repository's overlay on
-every run, then runs Typos on tracked Markdown files. The separate phrase stage
-checks eligible tracked text files, including non-Markdown files, for
-corrections that single-word spelling checks cannot express, such as
-`hand-written` becoming `handwritten`. The pin is currently `v0.1.3`; raise it
-together with the regenerated `typos.toml`, never on its own. The builder
-requires Python 3.14 or newer, so the target passes `--python 3.14` and `uv`
-fetches that interpreter when the host lacks one.
+`make spelling`, which invokes the `typos-config-builder` gate pinned by the
+full commit in `TYPOS_CONFIG_BUILDER_REF` in the `Makefile` (release `v0.1.3`).
+A commit resolves from the `uv` cache without the network, so the gate works
+offline. The gate regenerates `typos.toml` from the live shared dictionary and
+this repository's overlay on every run. It runs Typos across tracked files in
+`scope all`; a separate phrase stage checks eligible tracked text files for
+multi-word corrections that single-word spelling checks cannot express. The
+builder requires CPython 3.14 or newer, so `make spelling` passes
+`--python 3.14` and `uv` fetches that interpreter when the host lacks one.
 
 The shared dictionary is maintained in `leynos/agent-helper-scripts` and is
 fetched by the gate; `typos.toml` is a generated artefact, so CI never
@@ -114,11 +229,12 @@ as a test assertion on the SHA string.
 
 ## Coverage publication
 
-Pull-request continuous integration (CI) generates LCOV coverage and ratchets
-it against the baseline written by `coverage-main.yml`. The pull-request lane
-publishes no coverage artefact, never contacts CodeScene, and never receives
-`CS_ACCESS_TOKEN`, so a change in CodeScene's application programming interface
-(API) cannot hold a pull request.
+Pull-request continuous integration (CI) uses the mixed Rust/Python coverage
+action to generate Cobertura coverage and ratchets it against the baseline
+written by `coverage-main.yml`. The local `make coverage` target remains LCOV
+and writes `lcov.info`. The pull-request lane publishes no coverage artefact,
+never contacts CodeScene, and never receives `CS_ACCESS_TOKEN`, so a change in
+CodeScene's application programming interface (API) cannot hold a pull request.
 
 `coverage-main.yml` is the only publisher. On each push to `main` it refreshes
 the ratchet baseline and uploads the report to CodeScene. It also runs on
@@ -166,16 +282,56 @@ publisher is the only baseline writer. Both coverage steps select the same
 inputs at the same `shared-actions` pin because the pull-request ratchet is
 only meaningful against a baseline measured the same way.
 
+The repository-specific build-standard tests use
+`tests/workflow_contracts/workflow_contract_support.py` only for strict YAML
+reading and workflow-shape access. Keep build, coverage, and route assertions
+in their corresponding `*_rules.py` modules; do not extend the helper with
+another copy of shared CV-005 policy.
+
+### Workflow contract helper boundaries
+
+Keep workflow-shape access in `workflow_contract_support.py`: only
+`read_workflows` calls `_read_workflow`, and only `steps` calls
+`_iter_job_steps`. Policy checks stay in their `*_rules.py` consumers.
+Cargo-output parsing stays in `cargo_selection_test.py`; only
+`_evert_rustc_command` composes `_cargo_running_tokens` and
+`_evert_rustc_arguments`.
+
+In `whitaker_provisioning_rules.py`, only `make_lint_step_status` calls
+`_make_invocation_arguments`, and only `lint_job_action_violations` calls
+`_action_order_violations`. In `build_tools_rules.py`, only
+`_step_installer_violations` may call `_installer_problem_messages`, and only
+`_step_wrapper_violations` may call `_wrapper_candidate_problems`. Keep these
+helpers private to that module; other workflow-policy modules must not import
+them. Keep `_setup_commands`, `_install_order_problem`,
+`_wrapper_step_problems`, `_optional_text`, and `_local_workflow_problem`
+private to their respective mutation, wrapper, suite-step, and
+reusable-workflow policy paths as well.
+
+Keep matrix-value and runner-status helpers in `build_tools_runner.py`, where
+they compose the module's matrix readers and callers. Provisioning requirements
+and diagnostics remain in their existing consumers. In
+`coverage_toolchain_rules.py`, only `_setup` calls `_setup_order_problems` and
+`_setup_step_problems`. If release-command checks move to
+`supported_route_command_rules.py`, keep its helper private there and permit
+only `_release_command_errors` to call it.
+
+Within that module, the private `_construct_workflow_yaml` helper owns the
+single-document `SafeLoader` lifecycle, duplicate-key validation, and document
+construction. `load_workflow` is its only permitted caller and owns the
+filename-prefixed errors and root-shape check. Policy modules must use
+`load_workflow` or `read_workflows`; they must not call the constructor helper.
+
 `make test-workflow-contracts` holds this shape by running
 `cv005-contracts check`, the shared contract library in `leynos/shared-actions`
 (`packages/cv005-contracts`), from a full commit named by `CV005_CONTRACTS_REF`
 in the Makefile, and CI runs it as its own step. A fix to the rules is
-therefore a pin bump. The target needs `uv`, which fetches the Python 3.13 the
-library runs under. The repository's parameters are in `.github/cv005.toml`: its
-`repository` name and the `[selection]` inputs the baseline measures, which
-the publisher's generator must carry and every pull-request lane must match.
-The library's own suite proves each rule refuses the shape it exists to refuse,
-so this repository keeps no copy of the readers or the refusal cases. Its rules
+therefore a pin bump. The target needs `uv`, which fetches the managed Python
+3.14 baseline used to run the library. The repository's parameters are in
+`.github/cv005.toml`: its `repository` name and `[selection]` inputs are the
+baseline measured by the publisher's generator and every pull-request lane. The
+library's own suite proves each rule refuses the shape it exists to refuse, so
+this repository keeps no copy of the readers or the refusal cases. Its rules
 read every workflow a pull request can start, from its own events, reviews and
 comments, a merge queue, or a push not confined to `main` or tags, following
 local reusable-workflow calls, `workflow_run` chains and local composite
@@ -191,24 +347,83 @@ uploading job declares the environment, as a string or as `{name: codescene}`;
 no other job declares it; and no workflow a pull request can start declares it
 in any job.
 
+## The build standard
+
+Development, test, lint, and typecheck builds on Linux use the parallel `rustc`
+frontend (`-Zthreads=8`) and the pinned `mold` linker
+(`-Clink-arg=-fuse-ld=mold`). The `cfg(target_os = "linux")` table in
+`.cargo/config.toml` applies the defaults across Linux architectures. macOS and
+Windows keep their platform linker.
+
+An assigned `RUSTFLAGS` replaces the configuration's flags, so the Makefile
+recipes that set it compose the standard's flags onto any inherited value (CI's
+`setup-rust` exports one). Coverage and release preserve caller-supplied
+`RUSTFLAGS` while omitting the development flags; coverage adds its own `lld`
+route. A direct `cargo build --release` still takes the configuration's flags,
+so use `make release` for the stable route.
+
+On Linux, install `mold` before building: the configuration names it, so a
+build without it fails at link time. CI installs it through `setup-rust`'s
+`install-mold` input. `tests/build_standard_contract.rs` holds the standard. It
+reads the configuration sources, the commands `make -n` prints for each
+development target on Linux x86_64, Linux aarch64, and macOS hosts (each
+keeping the caller's own `RUSTFLAGS`) and for each coverage and release target
+on Linux, and the `setup-rust` steps of the CI workflows (each must pass
+`install-mold`), so a flag lost through a recipe or workflow edit fails there.
+The text readers take fixture input and never start Make. The separate
+`make_execution` adapter is reserved for repository integration checks that
+must inspect the real target expansions.
+
+Keep build-contract readers within their owning test modules. In
+`build_standard_support/config.rs`, `Pin` owns channel parsing and calls only
+its private channel-classification helpers. Make-output folding and Cargo
+command recognition stay in `makefile_contract.rs`; stable release-command
+discovery and flag-policy checks stay in `build_backend_contract.rs`. Shell
+wrapper and quoted `RUSTFLAGS` parsing remain in
+`build_standard_support/make.rs`. Keep the parameterized cross-route
+linker-argument regression with its caller-flag contract in
+`makefile_contract_support/cross_caller_flags.rs`. These readers and regression
+cases are module-local; do not make them shared cross-module helpers. The
+assignment and inheritance helpers (`shell_wrapper_assignment`,
+`quoted_assignment`, `has_glued_inherited_flags`, and `inherits_caller_flags`)
+are private to `make.rs`; they have no production callers outside that module.
+Within it, `assigned_rustflags` alone dispatches to the wrapper and quoted
+readers, and `quoted_assignment` alone calls the inheritance predicates. The
+child test module exercises the helpers directly.
+
+### Backend support
+
+Cranelift is excluded from the development defaults and pinned toolchain
+components. With Cranelift selected on the pinned `nightly-2026-05-28` Linux
+toolchain, the `catch_unwind` contract fails and a panicking joined thread
+aborts with `failed to initiate panic, error 5`. Both probes pass on LLVM, so
+the standard retains LLVM until Cranelift supports these panic paths. The
+[follow-up issue #80](https://github.com/leynos/evert/issues/80) schedules a
+review for 1 April 2027; the tests must remain intact when support is
+reassessed.
+
 ## Tooling
 
-Development builds use the standard LLVM backend by default. On Linux targets,
-`.cargo/config.toml` configures clang to link with `mold` so debug builds link
-quickly. Coverage generation uses `lld` because LLVM coverage tooling expects
-LLVM-compatible linker behaviour.
-
-The pinned nightly toolchain retains the `llvm-tools-preview` and
-`rustc-codegen-cranelift-preview` components, so the Cranelift backend and LLVM
-coverage tooling are always installed; `tools/dev-fast/config.toml` is what
-actually controls the repository-local opt-in activation. The opt-in
-accelerated path, `make dev-build` and `make dev-test`, applies the Cranelift
-codegen backend alongside `mold` via that fragment. It requires a nightly
-toolchain and is never applied to release, coverage, or verification builds; see
-[Fast development builds](../AGENTS.md#fast-development-builds) in `AGENTS.md`.
+The LLVM and pinned `mold` development route applies to native Linux x86_64 and
+aarch64 hosts; other targets use LLVM and their platform linker. Run
+`make install-build-tools` to provision the pinned nightly and local build
+tools, including `mold` 2.41.0 and the `evert-clang-mold` wrapper. Standard
+Make targets add the install directory to `PATH` and check prerequisites before
+compiling. Bare Cargo commands on a supported Linux target need the same
+directory on `PATH`. The wrapper source is `scripts/clang-linker.sh`; it checks
+the pinned linker and passes its directory to Clang so the system linker cannot
+take precedence. Coverage uses LLVM and `lld` for compatibility with coverage
+tooling. The pinned nightly includes the `llvm-tools-preview` component.
 
 Install `clang`, `lld`, `mold`, `python3`, and `cargo-audit` before running the
 full generated workflow locally on Linux.
+
+On native Linux x86_64 and aarch64, development, test, lint, and typecheck use
+this LLVM and pinned-linker route. Cargo's target table also applies to direct
+cross builds to Linux targets from another host. That cross-host development
+route is unsupported because the linker wrapper and pinned `mold` installation
+target the Linux build host. Use a supported Linux host for development builds;
+the stable Cross release workflow handles explicit release targets.
 
 ### Security audit ignores
 

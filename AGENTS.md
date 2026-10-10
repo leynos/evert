@@ -32,6 +32,10 @@
   lines.  Long switch statements or dispatch tables should be broken up by
   feature and constituents colocated with targets. Large blocks of test data
   should be moved to external data files.
+- **Do not silence Python lints.** Fix the code rather than adding `# noqa`,
+  `# pylint: disable`, `# type: ignore`, or `# ty: ignore`. The only exemptions
+  are `assert` in tests and the process helper `command_runner.py` under
+  `tests/workflow_contracts/`; see the developers' guide.
 
 ## Documentation maintenance
 
@@ -133,33 +137,22 @@ This repository is written in Rust and uses Cargo for building and dependency
 management. Contributors should follow these best practices when working on the
 project:
 
-- Run `make check-fmt`, `make lint`, and `make test` before committing. These
-  targets wrap the following commands, so contributors understand the exact
-  behaviour and policy enforced:
-  - `make check-fmt` executes:
-
-    ```sh
-    cargo fmt --workspace -- --check
-    ```
-
-    validating formatting across the entire workspace without modifying files.
-  - `make lint` executes:
-
-    ```sh
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
-    ```
-
-    linting every target with all features enabled and denying all Clippy
-    warnings.
-  - `make test` executes:
-
-    ```sh
-    cargo test --workspace
-    ```
-
-    running the full workspace test suite. Use `make fmt`
-    (`cargo fmt --workspace`) to apply formatting fixes reported by the
-    formatter check.
+- Run `make check-fmt`, `make lint`, and `make test` before committing.
+  These targets include the following checks:
+  - `make check-fmt` checks Rust formatting with `cargo fmt --all -- --check`
+    and Markdown formatting with `mdtablefix --check`. It does not modify
+    files.
+  - `make lint` runs rustdoc with warnings denied, Clippy for all workspace
+    targets and features with warnings denied, and the Whitaker Dylint suite
+    across workspace packages. It then runs the Python lint gateway (Ruff,
+    Pylint, df12 house lints, ambrleaks, and Interrogate on CPython 3.14).
+  - `make typecheck` type-checks the Python sources with ty on CPython 3.14,
+    then runs `cargo check` over all targets and features.
+  - `make test` runs `cargo nextest run` when cargo-nextest is installed, or
+    `cargo test` otherwise, with all workspace targets and features. It also
+    runs doctests for all workspace packages and features.
+  - `make fmt` applies the nightly Rust formatter, formats Markdown with
+    `mdtablefix`, and applies `markdownlint-cli2 --fix "**/*.md"`.
 - Clippy warnings MUST be disallowed.
 - Fix any warnings emitted during tests in the code itself rather than
   silencing them.
@@ -397,24 +390,36 @@ collaboration.
 
 ## Fast development builds
 
-`make dev-build` and `make dev-test` compile with the opt-in Cranelift backend
-and the mold linker configured in `tools/dev-fast/config.toml`. They require a
-nightly toolchain and, on Linux, a `mold` binary on the `PATH`. The fragment is
-passed explicitly with `--config`, so release, coverage, and verification
-builds are unaffected; never copy its contents into `.cargo/config.toml`, which
-Cargo applies to every build.
+The selected development standard applies to native Linux x86_64 and aarch64
+targets: the pinned nightly enables the parallel `rustc` frontend and pinned
+`mold` linker. Rustc uses its LLVM backend on all targets. Cargo discovers the
+Linux cfg defaults from `.cargo/config.toml`, including for bare development
+commands. Cargo selects the installed `evert-clang-mold` wrapper on Linux.
+Install the pinned nightly, linker, and wrapper with
+`make install-build-tools`. Make adds `$BUILD_TOOLS_PREFIX/bin` to `PATH`; bare
+Cargo commands need that directory on `PATH` too. The wrapper checks the pinned
+`mold` binary and gives its directory to Clang so the system linker cannot take
+precedence. Standard Make build, test, lint, and typecheck targets run
+`make check-build-tools` before compiling and report an actionable installation
+hint when a prerequisite is missing.
 
-## dev-fast is the standard development path
+Cargo keys these defaults by target OS, including direct cross builds to Linux
+from another host. That cross-host development route is unsupported; use the
+stable Cross release workflow for supported cross-platform packaging. Make's
+explicit-target development routes clear the host defaults, and direct cross
+builds need an explicitly verified compiler and linker route.
 
-The standard `make build`, `make test`, `make lint`, and `make typecheck`
-targets already pass `--config tools/dev-fast/config.toml` to every cargo
-invocation they make; this is not limited to the opt-in `dev-build` and
-`dev-test` targets above. An agent or human who calls `cargo build`,
-`cargo test`, `cargo clippy`, `cargo check`, or `cargo doc` directly for a
-development build, test, lint, or typecheck run must pass
-`--config tools/dev-fast/config.toml` too, or use the Makefile targets instead
-of raw `cargo`. The fragment must never be applied to coverage, release, or
-verification builds. Mixing direct-cargo and `make` invocations without the
-flag thrashes the incremental build cache, since Cargo fingerprints a build
-differently depending on which codegen backend and linker configuration
-produced it.
+## Development build routing
+
+The standard Make targets retain the development flags when their recipes assign
+`RUSTFLAGS`; the parallel frontend and pinned linker route applies to native
+Linux x86_64 and aarch64 hosts. Rustc uses LLVM on all targets. Other platforms
+retain their platform linker. Coverage and stable release and packaging routes
+preserve caller flags but omit the development flags. Verification uses its
+documented toolchain, and Whitaker uses its own installer-managed toolchain.
+Installed build tools need not be active in every job.
+
+On the selected target, a direct `cargo build --release` still discovers the
+development defaults. Use `make release` for the configured stable release
+route, or select and verify the appropriate non-development flags for another
+production command.
