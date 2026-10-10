@@ -118,7 +118,7 @@ proptest! {
     /// The shell wrapper exposes Make's own flags to the held-out route reader.
     #[test]
     fn shell_wrappers_normalize_recipe_flags_and_reject_development_flags(
-        ordinary_flags in prop::collection::vec("-[A-Za-z][A-Za-z0-9_-]{0,12}", 0..8),
+        ordinary_options in prop::collection::vec("[A-Za-z][A-Za-z0-9_-]{0,12}", 0..8),
         forbidden_index in prop_oneof![Just(None), (0usize..4).prop_map(Some)],
     ) {
         let forbidden_flags = [
@@ -127,7 +127,10 @@ proptest! {
             "-Clinker=evert-clang-mold",
             "-Clink-arg=-fuse-ld=mold",
         ];
-        let mut recipe_flags = ordinary_flags;
+        let mut recipe_flags: Vec<String> = ordinary_options
+            .iter()
+            .flat_map(|option| ["-C".to_owned(), format!("metadata={option}")])
+            .collect();
         if let Some(index) = forbidden_index {
             let flag = forbidden_flags
                 .get(index)
@@ -339,4 +342,27 @@ proptest! {
             "repeated channel assignments must not be accepted"
         );
     }
+}
+
+#[test]
+fn held_out_flags_detect_development_flag_after_split_codegen_pair() {
+    let command = concat!(
+        "bash -c 'make_flags=$1; shift; ",
+        "effective_flags=\"${RUSTFLAGS:+$RUSTFLAGS }$make_flags\"; ",
+        "exec env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=\"$effective_flags\" ",
+        "\"$@\"' _ '-C metadata=ordinary -Zcodegen-backend=cranelift' cargo build\n"
+    );
+    let mut runner = |_target: &str, _host| Ok(command.to_owned());
+
+    let (problems, read) = property_result(held_out_problems_with(&mut runner))
+        .expect("the injected make runner returns valid wrapper output");
+
+    assert_eq!(read, 2);
+    assert_eq!(
+        problems,
+        vec![
+            "`make coverage` takes -Zcodegen-backend=cranelift",
+            "`make release` takes -Zcodegen-backend=cranelift",
+        ]
+    );
 }

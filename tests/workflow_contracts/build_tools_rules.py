@@ -1,10 +1,8 @@
-"""Require pinned linker provisioning before every Linux test-suite workflow path.
+"""Require pinned linker provisioning before Linux test-suite workflow paths.
 
-The standard development build uses the pinned linker on the supported native
-x86_64 and aarch64 GNU/Linux routes. This consumer contract checks direct
-Make/Cargo suites, coverage actions, and the shared mutation workflow before
-those paths reach compilation. It scans all workflows so a new suite job is
-measured without adding its job id to a list.
+The supported native x86_64 and aarch64 GNU/Linux routes use the pinned
+linker. This consumer checks direct Make/Cargo suites, coverage actions, and
+the shared mutation workflow; scanning all workflows discovers new suites.
 """
 
 import re
@@ -28,6 +26,9 @@ SUITE_COMMAND: typ.Final[re.Pattern[str]] = re.compile(
 )
 _INSTALL_COMMAND_DIAGNOSTIC: typ.Final[str] = (
     "setup-commands must run one unconditional make install-build-tools command"
+)
+_MISSING_WRAPPER_DIAGNOSTIC: typ.Final[str] = (
+    "no unconditional make install-build-tools step occurs before the suite"
 )
 
 
@@ -78,9 +79,7 @@ def _job_violations(
         return False, [f"{where} {reusable_problem}"]
 
     step_list = _job_steps(where, job)
-    suite_indexes = [
-        index for index, step in enumerate(step_list) if _is_suite_step(step)
-    ]
+    suite_indexes = [i for i, step in enumerate(step_list) if _is_suite_step(step)]
     if not suite_indexes:
         return False, []
 
@@ -143,17 +142,12 @@ def _unresolved_reusable_problem(
 
 
 def _local_workflow_problem(uses: str, documents: dict[str, Document]) -> str:
-    """Describe why a local reusable workflow cannot be inspected here.
+    """Check paths; ``_local_workflow_problem("missing.yml", {})`` flags missing.
 
     Returns
     -------
     str
         The policy diagnostic for the local workflow reference.
-
-    Examples
-    --------
-    >>> _local_workflow_problem("/".join((".", "missing.yml")), {})
-    'calls an unreadable local workflow'
     """
     path, separator, _reference = uses.partition("@")
     if separator:
@@ -174,8 +168,7 @@ def _mutation_violations(where: str, job: dict[str, object]) -> list[str]:
     if _continues_on_error(job):
         violations.append(f"{where} must not soften mutation-suite failures")
     install_lines = [
-        line.strip()
-        for line in commands.splitlines()
+        line.strip() for line in commands.splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
     install_problem = _install_order_problem(where, install_lines)
@@ -185,42 +178,28 @@ def _mutation_violations(where: str, job: dict[str, object]) -> list[str]:
 
 
 def _setup_commands(job: dict[str, object]) -> str | None:
-    """Read a reusable job's string-valued setup-commands input.
+    """Read setup commands, e.g. ``_setup_commands({})`` returns ``None``.
 
     Returns
     -------
     str | None
-        The command text, or ``None`` when the input shape is unsupported.
-
-    Examples
-    --------
-    For example, ``_setup_commands({"with": {"setup-commands": "make"}})``
-    returns ``"make"``; malformed input returns ``None``.
+        Setup commands, or ``None`` for malformed input.
     """
     setup = job.get("with")
-    if not isinstance(setup, dict):
-        return None
-    commands = setup.get("setup-commands")
+    commands = setup.get("setup-commands") if isinstance(setup, dict) else None
     return commands if isinstance(commands, str) else None
 
 
 def _install_order_problem(where: str, install_lines: list[str]) -> str | None:
-    """Require exactly one unconditional install command with its status intact.
+    """Find install errors; e.g. ``_install_order_problem("job", [])`` returns error.
 
     Returns
     -------
     str | None
-        The first installation-order diagnostic, or ``None`` when valid.
-
-    Examples
-    --------
-    >>> _install_order_problem("job", ["make install-build-tools"])
-    >>> _install_order_problem("job", [])
-    'job setup-commands must run one unconditional make install-build-tools command'
+        The first install-order diagnostic, or ``None`` when valid.
     """
     exact_installs = [
-        index
-        for index, line in enumerate(install_lines)
+        index for index, line in enumerate(install_lines)
         if line == "make install-build-tools"
     ]
     if len(exact_installs) != 1:
@@ -267,20 +246,17 @@ def _is_suite_step(step: dict[str, object]) -> bool:
 
 
 def _optional_text(step: dict[str, object], key: str, label: str) -> str | None:
-    """Read optional text from a step, naming values of the wrong type.
-
-    For example, ``_optional_text({"run": "make"}, "run", "command")``
-    returns ``"make"``; an absent key returns ``None``.
+    """Read text, e.g. ``_optional_text({}, "run", "command")`` returns ``None``.
 
     Returns
     -------
     str | None
-        The string value, or ``None`` when the key is absent.
+        The optional text value, or ``None`` when the key is absent.
 
     Raises
     ------
     WorkflowError
-        If the present value is not a string.
+        If a present value is not a string.
     """
     if key not in step:
         return None
@@ -307,13 +283,26 @@ def _step_installer_violations(
     ]
     if valid_before:
         return []
+    problems = _installer_problem_messages(candidates, suite_index)
+    return [f"{where} {problem}" for problem in problems]
 
+
+def _installer_problem_messages(
+    candidates: list[tuple[int, dict[str, object], list[str]]], suite_index: int
+) -> list[str]:
+    """Collect findings; ``_installer_problem_messages([], 0)`` reports no installer.
+
+    Returns
+    -------
+    list[str]
+        Ordered, de-duplicated installer findings.
+    """
     problems = [problem for _, _, found in candidates for problem in found]
     if any(index >= suite_index and not found for index, _, found in candidates):
         problems.append("the pinned linker installer must run before the suite")
     if not candidates:
         problems.append("no pinned linker installer occurs before the suite")
-    return [f"{where} {problem}" for problem in dict.fromkeys(problems)]
+    return list(dict.fromkeys(problems))
 
 
 def _step_wrapper_violations(
@@ -321,8 +310,7 @@ def _step_wrapper_violations(
 ) -> list[str]:
     """Require a standalone Make installer before each Linux suite path."""
     candidates = [
-        (index, step)
-        for index, step in enumerate(steps)
+        (index, step) for index, step in enumerate(steps)
         if isinstance(run := step.get("run"), str)
         and run.strip() == "make install-build-tools"
     ]
@@ -334,30 +322,38 @@ def _step_wrapper_violations(
     if valid_before:
         return []
 
-    problems: list[str] = []
-    if not candidates:
-        problems.append(
-            "no unconditional make install-build-tools step occurs before the suite"
-        )
-    for index, step in candidates:
-        problems.extend(_wrapper_step_problems(index, step, suite_index))
+    problems = _wrapper_candidate_problems(candidates, suite_index)
     return [f"{where} {problem}" for problem in dict.fromkeys(problems)]
+
+
+def _wrapper_candidate_problems(
+    candidates: list[tuple[int, dict[str, object]]], suite_index: int
+) -> list[str]:
+    """Collect findings; ``_wrapper_candidate_problems([], 0)`` finds no step.
+
+    Returns
+    -------
+    list[str]
+        Ordered wrapper findings for the candidates.
+    """
+    if not candidates:
+        return [_MISSING_WRAPPER_DIAGNOSTIC]
+    return [
+        problem
+        for index, step in candidates
+        for problem in _wrapper_step_problems(index, step, suite_index)
+    ]
 
 
 def _wrapper_step_problems(
     index: int, step: dict[str, object], suite_index: int
 ) -> list[str]:
-    """Report condition, soft-failure, and ordering problems for one installer.
+    """Check setup; ``_wrapper_step_problems(1, {}, 0)`` reports late installation.
 
     Returns
     -------
     list[str]
         Ordered diagnostics for this installer step.
-
-    Examples
-    --------
-    >>> _wrapper_step_problems(1, {"run": "make install-build-tools"}, 0)
-    ['make install-build-tools must run before the suite']
     """
     problems: list[str] = []
     if "if" in step:

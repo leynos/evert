@@ -1,6 +1,6 @@
 //! Exercises Make's lint routes and their build-tools preflight.
 
-use std::process::Command;
+use std::process::{Command, Output};
 
 use rstest::rstest;
 
@@ -20,20 +20,10 @@ pub(super) fn preflight_and_cargo_positions(output: &str) -> Option<(usize, usiz
 #[case::composite_lint("lint", true)]
 #[case::whitaker_leaf("lint-whitaker", false)]
 fn failing_whitaker_propagates_after_clippy(#[case] target: &str, #[case] parallel: bool) {
-    let mut command = Command::new("make");
-    if parallel {
-        command.arg("-j");
-    }
-    let output = command
-        .args([
-            "--no-print-directory",
-            target,
-            "CARGO=true",
-            "WHITAKER=false",
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .expect("make must run with the controlled executables");
+    let output = match run_make_with_failing_whitaker(target, parallel) {
+        Ok(output) => output,
+        Err(error) => panic!("make must run with the controlled executables: {error}"),
+    };
     let diagnostics = format!(
         "{}\n{}",
         String::from_utf8_lossy(&output.stdout),
@@ -94,4 +84,24 @@ fn failing_whitaker_propagates_after_clippy(#[case] target: &str, #[case] parall
         ),
         diagnostics = diagnostics
     );
+}
+
+/// Runs the selected lint recipe with Cargo succeeding and Whitaker failing.
+///
+/// For example, `run_make_with_failing_whitaker("lint", true)` runs the
+/// composite recipe in parallel so the test can inspect failure propagation.
+fn run_make_with_failing_whitaker(target: &str, parallel: bool) -> std::io::Result<Output> {
+    let mut command = Command::new("make");
+    if parallel {
+        command.arg("-j");
+    }
+    command
+        .args([
+            "--no-print-directory",
+            target,
+            "CARGO=true",
+            "WHITAKER=false",
+        ])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
 }

@@ -299,11 +299,14 @@ Cargo-output parsing stays in `cargo_selection_test.py`; only
 
 In `whitaker_provisioning_rules.py`, only `make_lint_step_status` calls
 `_make_invocation_arguments`, and only `lint_job_action_violations` calls
-`_action_order_violations`. In `build_tools_rules.py`, keep `_setup_commands`,
-`_install_order_problem`, `_wrapper_step_problems`, `_optional_text`, and
-`_local_workflow_problem` private to their respective mutation, wrapper,
-suite-step, and reusable-workflow policy paths; other workflow-policy modules
-must not import them.
+`_action_order_violations`. In `build_tools_rules.py`, only
+`_step_installer_violations` may call `_installer_problem_messages`, and only
+`_step_wrapper_violations` may call `_wrapper_candidate_problems`. Keep these
+helpers private to that module; other workflow-policy modules must not import
+them. Keep `_setup_commands`, `_install_order_problem`,
+`_wrapper_step_problems`, `_optional_text`, and `_local_workflow_problem`
+private to their respective mutation, wrapper, suite-step, and
+reusable-workflow policy paths as well.
 
 Keep matrix-value and runner-status helpers in `build_tools_runner.py`, where
 they compose the module's matrix readers and callers. Provisioning requirements

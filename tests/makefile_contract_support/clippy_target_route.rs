@@ -17,49 +17,52 @@ use super::{
     make_dry_run_with_options,
 };
 
+/// One target-selection input and the expected route for each Cargo command.
+struct TargetRouteCase {
+    target: &'static str,
+    variable: &'static str,
+    value: &'static str,
+    expected_development_routes: [bool; 2],
+}
+
 /// Native, cross, malformed, and unrelated target-like options select routes.
 #[rstest]
-#[case::cross_build_target_setting("CARGO_BUILD_TARGET", CROSS_TARGET, false)]
-#[case::cross_split_cargo_target("CARGO_FLAGS", CROSS_SPLIT_TARGET, false)]
-#[case::cross_joined_cargo_target("CARGO_FLAGS", CROSS_JOINED_TARGET, false)]
-#[case::cross_split_test_target("TEST_FLAGS", CROSS_SPLIT_TARGET, false)]
-#[case::cross_joined_test_target("TEST_FLAGS", CROSS_JOINED_TARGET, false)]
+#[case::cross_build_target_setting(TargetRouteCase { target: "test", variable: "CARGO_BUILD_TARGET", value: CROSS_TARGET, expected_development_routes: [false, false] })]
+#[case::cross_split_cargo_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: CROSS_SPLIT_TARGET, expected_development_routes: [true, false] })]
+#[case::cross_joined_cargo_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: CROSS_JOINED_TARGET, expected_development_routes: [true, false] })]
+#[case::cross_split_test_target(TargetRouteCase { target: "test", variable: "TEST_FLAGS", value: CROSS_SPLIT_TARGET, expected_development_routes: [false, true] })]
+#[case::cross_joined_test_target(TargetRouteCase { target: "test", variable: "TEST_FLAGS", value: CROSS_JOINED_TARGET, expected_development_routes: [false, true] })]
 #[case::test_target_after_separator_is_ignored(
-    "TEST_FLAGS",
-    "--all-targets --all-features -- --target=aarch64-unknown-linux-gnu",
-    true
+    TargetRouteCase {
+        target: "test",
+        variable: "TEST_FLAGS",
+        value: "--all-targets --all-features -- --target=aarch64-unknown-linux-gnu",
+        expected_development_routes: [true, true],
+    }
 )]
-#[case::malformed_target("CARGO_FLAGS", "--target=", false)]
-#[case::multiple_targets(
-    "CARGO_FLAGS",
-    "--target x86_64-unknown-linux-gnu --target aarch64-unknown-linux-gnu",
-    false
-)]
-#[case::native_build_target_setting("CARGO_BUILD_TARGET", NATIVE_TARGET, true)]
-#[case::native_split_cargo_target("CARGO_FLAGS", NATIVE_SPLIT_TARGET, true)]
-#[case::native_joined_cargo_target("CARGO_FLAGS", NATIVE_JOINED_TARGET, true)]
-#[case::native_split_test_target("TEST_FLAGS", NATIVE_SPLIT_TARGET, true)]
-#[case::native_joined_test_target("TEST_FLAGS", NATIVE_JOINED_TARGET, true)]
-#[case::target_directory_is_not_a_target("CARGO_FLAGS", "--target-dir target", true)]
-fn explicit_target_selects_development_route(
-    #[case] variable: &str,
-    #[case] value: &str,
-    #[case] should_keep_development_flags: bool,
-) {
+#[case::malformed_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: "--target=", expected_development_routes: [true, false] })]
+#[case::multiple_targets(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: "--target x86_64-unknown-linux-gnu --target aarch64-unknown-linux-gnu", expected_development_routes: [true, false] })]
+#[case::native_build_target_setting(TargetRouteCase { target: "test", variable: "CARGO_BUILD_TARGET", value: NATIVE_TARGET, expected_development_routes: [true, true] })]
+#[case::native_split_cargo_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: NATIVE_SPLIT_TARGET, expected_development_routes: [true, true] })]
+#[case::native_joined_cargo_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: NATIVE_JOINED_TARGET, expected_development_routes: [true, true] })]
+#[case::native_split_test_target(TargetRouteCase { target: "test", variable: "TEST_FLAGS", value: NATIVE_SPLIT_TARGET, expected_development_routes: [true, true] })]
+#[case::native_joined_test_target(TargetRouteCase { target: "test", variable: "TEST_FLAGS", value: NATIVE_JOINED_TARGET, expected_development_routes: [true, true] })]
+#[case::target_directory_is_not_a_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: "--target-dir target", expected_development_routes: [true, true] })]
+fn explicit_target_selects_development_route(#[case] case: TargetRouteCase) {
     assert!(
         matches!(
-            variable,
+            case.variable,
             "CARGO_BUILD_TARGET" | "CARGO_FLAGS" | "TEST_FLAGS"
         ),
         "each routing case names a known Make variable"
     );
-    let target = if variable == "CARGO_FLAGS" {
-        "lint"
-    } else {
-        "test"
-    };
-    let run = make_dry_run_with_options(target, "Linux", "x86_64", &[(variable, value)])
-        .expect("make --dry-run must run");
+    let run = make_dry_run_with_options(
+        case.target,
+        "Linux",
+        "x86_64",
+        &[(case.variable, case.value)],
+    )
+    .expect("make --dry-run must run");
     assert!(
         run.succeeded,
         "target-selection dry run failed: {}",
@@ -69,34 +72,26 @@ fn explicit_target_selects_development_route(
     assert_eq!(
         commands.len(),
         2,
-        "`make --dry-run {target}` must expose both Cargo invocations: {}",
+        "`make --dry-run {}` must expose both Cargo invocations: {}",
+        case.target,
         run.stdout
     );
-    for (index, command) in commands.iter().enumerate() {
-        assert!(
-            command.contains("-D warnings"),
-            "warning policy was lost: {command}"
+    let [first, second] = commands.as_slice() else {
+        panic!(
+            "target-selection should expose two Cargo commands: {}",
+            run.stdout
         );
-        let command_uses_selected_target = variable == "CARGO_BUILD_TARGET"
-            || (variable == "CARGO_FLAGS" && index == 1)
-            || (variable == "TEST_FLAGS" && index == 0);
-        let command_should_keep_development_flags =
-            !command_uses_selected_target || should_keep_development_flags;
-        if command_should_keep_development_flags {
-            assert!(
-                has_development_route(command, "Linux", "x86_64"),
-                "Cargo command lost the expected development route: {command}"
-            );
-        } else {
-            let effective_route = effective_cargo_route(command);
-            for excluded in DEVELOPMENT_FLAGS {
-                assert!(
-                    !effective_route.contains(excluded),
-                    "cross or ambiguous target's effective flags contain {excluded}: {command}"
-                );
-            }
-        }
-    }
+    };
+    assert_route(
+        first,
+        case.expected_development_routes[0],
+        "first Cargo command",
+    );
+    assert_route(
+        second,
+        case.expected_development_routes[1],
+        "second Cargo command",
+    );
 }
 
 /// Checks Make routing when rustc-only target text follows `CARGO_FLAGS` `--`.
