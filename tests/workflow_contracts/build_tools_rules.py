@@ -376,11 +376,19 @@ def _is_setup_rust_candidate(step: dict[str, object]) -> bool:
 
 def _setup_rust_problems(step: dict[str, object]) -> list[str]:
     """Validate action identity, linker version, and unconditional execution."""
-    uses = step.get("uses")
-    inputs = step.get("with")
+    uses, inputs = step.get("uses"), step.get("with")
     if not isinstance(uses, str) or not isinstance(inputs, dict):
         return ["must use the pinned setup-rust linker installer"]
+    problems = _setup_rust_input_problems(uses, inputs)
+    if "if" in step:
+        problems.append("the pinned linker installer must not have an if condition")
+    if _continues_on_error(step):
+        problems.append("the pinned linker installer must not continue on error")
+    return problems
 
+
+def _setup_rust_input_problems(uses: str, inputs: dict[str, object]) -> list[str]:
+    """Check inputs; ``_setup_rust_input_problems("other", {})`` reports pin failure."""
     problems: list[str] = []
     if uses != SETUP_RUST_REF:
         problems.append("must use the approved pinned setup-rust action")
@@ -389,8 +397,4 @@ def _setup_rust_problems(step: dict[str, object]) -> list[str]:
     version = inputs.get("mold-version")
     if version is not None and str(version) != LINKER_VERSION:
         problems.append(f"must install pinned linker version {LINKER_VERSION}")
-    if "if" in step:
-        problems.append("the pinned linker installer must not have an if condition")
-    if _continues_on_error(step):
-        problems.append("the pinned linker installer must not continue on error")
     return problems

@@ -309,7 +309,9 @@ helpers private to that module; other workflow-policy modules must not import
 them. Keep `_setup_commands`, `_install_order_problem`,
 `_wrapper_step_problems`, `_optional_text`, and `_local_workflow_problem`
 private to their respective mutation, wrapper, suite-step, and
-reusable-workflow policy paths as well.
+reusable-workflow policy paths as well. Keep `_setup_rust_input_problems`
+private to `build_tools_rules.py`; only `_setup_rust_problems` may call it, and
+other workflow-policy modules must not import it.
 
 Keep matrix-value and runner-status helpers in `build_tools_runner.py`, where
 they compose the module's matrix readers and callers. Provisioning requirements

@@ -17,6 +17,13 @@ INSTALL_ORDER_DIAGNOSTIC = (
     f"{WHERE} setup-commands must run one unconditional "
     "make install-build-tools command"
 )
+SETUP_RUST_DIAGNOSTICS = (
+    f"{WHERE} must use the approved pinned setup-rust action",
+    f"{WHERE} must enable setup-rust install-mold",
+    f"{WHERE} must install pinned linker version {rules.LINKER_VERSION}",
+    f"{WHERE} the pinned linker installer must not have an if condition",
+    f"{WHERE} the pinned linker installer must not continue on error",
+)
 
 
 def _valid_setup() -> dict[str, object]:
@@ -98,6 +105,20 @@ def test_setup_rust_problems_are_computed_once_for_each_candidate(
         "valid candidate before the suite should satisfy the installer rule"
     )
     assert visited == [id(step) for step in candidates], visited
+
+
+def test_setup_rust_diagnostics_keep_input_and_execution_order() -> None:
+    """Action and input errors precede unconditional-execution errors."""
+    invalid_setup: dict[str, object] = {
+        "uses": f"{rules.SETUP_RUST}@main",
+        "with": {"install-mold": "false", "mold-version": "1.0"},
+        "if": "always()",
+        "continue-on-error": True,
+    }
+    found = _step_installer_violations(
+        WHERE, [invalid_setup, {"run": "cargo test"}], 1
+    )
+    assert tuple(found) == SETUP_RUST_DIAGNOSTICS, found
 
 
 @pytest.mark.parametrize(
