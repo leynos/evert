@@ -174,6 +174,20 @@ def test_cv005_contracts_use_the_repository_python_baseline() -> None:
     )
 
 
+def test_coverage_sync_installs_the_workflow_yaml_dependency() -> None:
+    """The coverage action's default uv sync must install PyYAML."""
+    dev_dependencies = _pyproject_setting("dependency-groups", "dev")
+    assert isinstance(dev_dependencies, list), (
+        "pyproject.toml must declare the default uv dev dependency group"
+    )
+    assert any(
+        isinstance(dependency, str)
+        and dependency.lower().startswith("pyyaml")
+        and ">=6" in dependency
+        for dependency in dev_dependencies
+    ), "coverage sync must install the PyYAML floor required by workflow tests"
+
+
 def test_every_python_file_sits_under_a_lint_root() -> None:
     """Python outside the Makefile's source roots would escape every linter."""
     roots = _makefile_variable("PYTHON_SOURCE_ROOTS").split()

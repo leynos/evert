@@ -2,14 +2,21 @@
 # Python linters that guard the repository's workflow contract tests and any
 # helper scripts, benchmarks, or workflow-run modules added later. It
 # deliberately declares no `[project]` table and no `[build-system]`, so no
-# Python distribution can be built from it and `uv` never treats the
-# repository as a Python project.
+# Python distribution can be built from it. Its default `dev` dependency group
+# supplies dependencies to the coverage action's `uv sync` without packaging
+# Evert; Makefile checks install their own dependencies with `uv tool run`.
 #
 # The Ruff and Pylint configurations mirror the ones in
 # https://github.com/leynos/netsuke/blob/main/pyproject.toml, which in turn
 # mirror https://github.com/leynos/episodic/blob/main/pyproject.toml, so the
 # df12 house policy stays consistent across the estate; only the path-shaped
 # settings (excludes, per-file ignores) are local.
+
+[dependency-groups]
+# The coverage action runs `uv sync` before installing its own tools. Workflow
+# tests import PyYAML, so keep it in uv's default development group; Makefile
+# tests install it separately through their explicit test-tool options.
+dev = ["pyyaml>=6"]
 
 [tool.ruff]
 line-length = 88

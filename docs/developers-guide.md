@@ -74,11 +74,14 @@ typecheck gateway runs ty over that inventory. In order, the lint gateway runs:
 Rule sets differ between releases, so each tool is pinned exactly. To bump one,
 change its Makefile variable and fix the new findings in the same commit.
 
-`pyproject.toml` only configures these linters. It has no `[project]` or
-`[build-system]` table, so nothing can be built or published from it and `uv`
-never treats the repository as a Python project. It mirrors the Ruff and Pylint
-configuration of `leynos/netsuke`, which itself mirrors `leynos/episodic`; only
-path-shaped settings are local.
+`pyproject.toml` configures these linters and declares the default `dev`
+dependency group consumed by the coverage action's `uv sync`. It has no
+`[project]` or `[build-system]` table, so no Python distribution can be built
+or published from it. The group includes PyYAML because workflow-contract tests
+import it during coverage. Makefile tests install PyYAML separately through
+their explicit `uv tool run --with` options. The file mirrors the Ruff and
+Pylint configuration of `leynos/netsuke`, which itself mirrors
+`leynos/episodic`; only path-shaped settings are local.
 
 Repository-owned Python scripts, linting, typechecking, and pytest run on
 managed CPython 3.14 through `uv`; `uv` fetches the interpreter, so

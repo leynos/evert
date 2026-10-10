@@ -192,8 +192,9 @@ compact and omits build output such as `target/`.
 - `clippy.toml`: Configures Clippy lint behaviour that is not expressed
   directly in `Cargo.toml`.
 - `codecov.yml`: Configures coverage reporting behaviour.
-- `pyproject.toml`: Configures Ruff and Pylint for the Python lint gateway. It
-  defines no Python project.
+- `pyproject.toml`: Configures Ruff and Pylint and declares the default `dev`
+  dependency group for the coverage action's `uv sync`; it defines no Python
+  distribution.
 - `rust-toolchain.toml`: Pins the Rust toolchain channel and required
   components.
 
