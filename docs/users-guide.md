@@ -20,7 +20,8 @@ The generated `Makefile` exposes these public targets:
 - `make all` runs formatting checks, linting, tests, spelling, and the
   workflow contracts.
 - `make check-fmt` verifies Rust formatting.
-- `make lint` runs rustdoc, Clippy, and Whitaker with warnings denied.
+- `make lint` checks Python docstring coverage with `make interrogate` (it needs
+  `uv`), then runs rustdoc, Clippy, and Whitaker with warnings denied.
 - `make test` runs `cargo nextest run` when cargo-nextest is installed and
   falls back to `cargo test` otherwise. All projects also run doctests.
 - `make test-workflow-contracts` runs the shared `cv005-contracts` checks
