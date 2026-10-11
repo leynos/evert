@@ -19,10 +19,12 @@ The generated `Makefile` exposes these public targets:
 
 - `make all` runs formatting, linting, tests, spelling, and workflow contracts.
 - `make check-fmt` verifies Rust and Markdown formatting.
-- `make lint` runs rustdoc, Clippy, and Whitaker, then the Python linters, with
-  warnings denied.
-- `make lint-python` runs only the Python linters: Ruff, Pylint, the df12 house
-  lints, `ambrleaks`, and Interrogate.
+- `make lint` checks Python docstring coverage with Interrogate, then runs
+  rustdoc, Clippy, Whitaker, and the Python linters with warnings denied.
+- `make interrogate` checks every tracked Python source directory for complete
+  docstring coverage and fails on any undocumented definition.
+- `make lint-python` runs Ruff, Pylint, the df12 house lints, `ambrleaks`, and
+  Interrogate.
 - `make test` runs `cargo nextest run` when cargo-nextest is installed and
   falls back to `cargo test` otherwise. All projects also run doctests.
 - `make test-workflow-contracts` runs the shared CV-005 workflow checks and

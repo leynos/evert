@@ -5,12 +5,12 @@ This guide explains the contributor workflow for the generated Evert project.
 ## Local Workflow
 
 Use `make all` as the public entrypoint for formatting, linting, and tests.
-`make lint` runs rustdoc, Clippy, and Whitaker, then the
-[Python lint gateway](#python-lint-gateway). `make test` prefers
-`cargo nextest run` and falls back to `cargo test` when cargo-nextest is not
-available. `make audit` derives the Rust workspace root with `cargo metadata`,
-logs workspace member manifests, and runs `cargo audit` once from the workspace
-root. `make coverage` uses `cargo llvm-cov` with `lld`.
+`make lint` runs the Interrogate docstring-coverage gate, rustdoc, Clippy, and
+Whitaker, then the [Python lint gateway](#python-lint-gateway). `make test`
+prefers `cargo nextest run` and falls back to `cargo test` when cargo-nextest
+is not available. `make audit` derives the Rust workspace root with
+`cargo metadata`, logs workspace member manifests, and runs `cargo audit` once
+from the workspace root. `make coverage` uses `cargo llvm-cov` with `lld`.
 
 GitHub Actions Act validation lives in `.github/workflows/act-validation.yml`.
 The main `.github/workflows/ci.yml` workflow deliberately does not run
@@ -414,11 +414,12 @@ child test module exercises the helpers directly.
 
 ### Backend support
 
-Cranelift is excluded from the development defaults and pinned toolchain
-components. With Cranelift selected on the pinned `nightly-2026-05-28` Linux
-toolchain, the `catch_unwind` contract fails and a panicking joined thread
-aborts with `failed to initiate panic, error 5`. Both probes pass on LLVM, so
-the standard retains LLVM until Cranelift supports these panic paths. The
+Cranelift is excluded from the development defaults. The pinned
+`nightly-2026-10-11` toolchain includes its preview compiler component, but
+Cargo does not select that backend by default. With Cranelift selected, the
+`catch_unwind` contract fails and a panicking joined thread aborts with
+`failed to initiate panic, error 5`. Both probes pass on LLVM, so the standard
+retains LLVM until Cranelift supports these panic paths. The
 [follow-up issue #80](https://github.com/leynos/evert/issues/80) schedules a
 review for 1 April 2027; the tests must remain intact when support is
 reassessed.

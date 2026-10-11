@@ -25,15 +25,14 @@ WORKFLOW_PATH = (
     / "mutation-testing.yml"
 )
 
-#: The reusable-workflow revisions whose `install-mold` input and forwarding
-#: were checked in merged source. Shared-actions #545 added the input and
-#: forwards it to Setup Rust; Dependabot proposals need that source review
-#: before another SHA is added here.
+#: The approved revision is pinned on `main`; its setup-rust action declares
+#: `install-mold`, and its mutation workflow forwards that input. Review a new
+#: proposed source revision before adding its SHA to this allowlist.
 _REVIEWED_SHARED_ACTION_PIN_PARTS = (
-    "d0c2585d9e",
-    "144775e4ec",
-    "9fe26e7eeb",
-    "03c14844dd",
+    "2ddf19b3fd",
+    "52c0f1089d",
+    "b0d57b015f",
+    "859b80ab67",
 )
 REVIEWED_SHARED_ACTION_PINS = frozenset({"".join(_REVIEWED_SHARED_ACTION_PIN_PARTS)})
 _OLD_SHARED_ACTION_PIN_PARTS = (

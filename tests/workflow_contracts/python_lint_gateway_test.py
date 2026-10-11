@@ -34,7 +34,7 @@ DEFAULT_EXCLUDES = frozenset(
     }
 )
 
-GATEWAY_COMMANDS = ("RUFF", "PYLINT", "AMBRLEAKS", "INTERROGATE")
+GATEWAY_COMMANDS = ("RUFF", "PYLINT", "AMBRLEAKS")
 PINNED_TOOLS = (
     "RUFF_VERSION",
     "PYLINT_VERSION",
@@ -219,6 +219,11 @@ def test_coverage_environment_is_excluded_from_source_inventory() -> None:
     [
         pytest.param("all", "typecheck", id="all-requires-typecheck"),
         pytest.param("lint", "lint-python", id="lint-requires-lint-python"),
+        pytest.param(
+            "lint-python",
+            "interrogate",
+            id="python-lint-requires-docstring-coverage",
+        ),
         pytest.param(
             "typecheck",
             "typecheck-python",

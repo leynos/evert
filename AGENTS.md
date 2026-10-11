@@ -142,10 +142,10 @@ project:
   - `make check-fmt` checks Rust formatting with `cargo fmt --all -- --check`
     and Markdown formatting with `mdtablefix --check`. It does not modify
     files.
-  - `make lint` runs rustdoc with warnings denied, Clippy for all workspace
-    targets and features with warnings denied, and the Whitaker Dylint suite
-    across workspace packages. It then runs the Python lint gateway (Ruff,
-    Pylint, df12 house lints, ambrleaks, and Interrogate on CPython 3.14).
+  - `make lint` first runs Interrogate 1.7.0 with a 100 per cent threshold over
+    the repository's Python source directories, failing on any `MISSED` row,
+    then runs rustdoc, Clippy, Whitaker, and the Python lint gateway (Ruff,
+    Pylint, df12 house lints, and ambrleaks on CPython 3.14).
   - `make typecheck` type-checks the Python sources with ty on CPython 3.14,
     then runs `cargo check` over all targets and features.
   - `make test` runs `cargo nextest run` when cargo-nextest is installed, or

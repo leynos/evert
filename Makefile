@@ -1,7 +1,7 @@
 .PHONY: help all clean test build release coverage lint fmt check-fmt \
 	markdownlint nixie audit rust-audit spelling test-workflow-contracts \
 	typecheck install-build-tools check-build-tools lint-clippy lint-whitaker \
-	lint-python typecheck-python typecheck-rust
+	lint-python typecheck-python typecheck-rust interrogate
 
 # Keep the composite gates sequential even when a caller uses `make -j`.
 .NOTPARALLEL: all lint typecheck
@@ -78,8 +78,12 @@ AMBRLEAKS = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE
 # Interrogate is a documentation-coverage gate only; the repository is not a
 # Python distribution and needs no project metadata.
 INTERROGATE_VERSION ?= 1.7.0
+# Add every tracked Python source directory here; the workflow contract checks
+# that no owned Python source sits outside this coverage boundary.
+INTERROGATE_TARGETS ?= tests
+INTERROGATE_FLAGS ?= -vv --fail-under 100
 INTERROGATE = $(UV_ENV) $(UV) tool run --managed-python --python $(PYTHON_BASELINE) \
-	--from 'interrogate==$(INTERROGATE_VERSION)' interrogate --fail-under 100
+	--from 'interrogate==$(INTERROGATE_VERSION)' interrogate
 # Pin ty so `make` and CI invoke the same typechecker release. ty is pre-1.0
 # and its diagnostics shift between releases, so an unpinned install can fail
 # the gate without any code change. Bump deliberately and fix the new
@@ -231,7 +235,19 @@ coverage: ## Generate lcov coverage with lld for llvm-tools compatibility
 		LDFLAGS="$(COVERAGE_LINKER_FLAGS)" \
 		$(CARGO) llvm-cov --lcov --output-path lcov.info $(TEST_FLAGS)
 
-lint: lint-clippy lint-whitaker lint-python ## Run rustdoc, Clippy, Whitaker, and the Python linters with warnings denied
+# Interrogate rounds its percentage to one decimal, so fail on any MISSED row
+# as well as relying on the configured 100 percent threshold.
+interrogate: ## Enforce complete Python docstring coverage
+	@report="$$($(INTERROGATE) $(INTERROGATE_FLAGS) $(INTERROGATE_TARGETS))"; \
+	  status=$$?; \
+	  printf '%s\n' "$$report"; \
+	  test "$$status" -eq 0 || exit "$$status"; \
+	  if printf '%s\n' "$$report" | grep -q '| *MISSED |'; then \
+	    printf '%s\n' 'interrogate: undocumented definitions remain; see the MISSED rows above' >&2; \
+	    exit 1; \
+	  fi
+
+lint: interrogate lint-clippy lint-whitaker lint-python ## Run docstring, Rust, and Python gates with warnings denied
 
 # Keep Whitaker on the Clippy route's explicit prerequisite edge so `make -j`
 # cannot overlap the two compiler gates.
@@ -239,9 +255,9 @@ lint-whitaker: lint-clippy
 	env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="-D warnings" $(WHITAKER) $(WHITAKER_PACKAGES) -- $(CARGO_FLAGS)
 
 # Python lints run last, after the Rust compiler gates, and need no Rust
-# toolchain. Every command receives the same source roots so Ruff, Pylint, the
-# df12 house lints, ambrleaks, and Interrogate judge one boundary.
-lint-python: ## Run Ruff, Pylint, the df12 house lints, ambrleaks, and Interrogate over the Python sources
+# toolchain. Their commands share the repository source inventory; Interrogate
+# runs as a separate prerequisite with an independently checked target list.
+lint-python: interrogate ## Run Ruff, Pylint, the df12 house lints, ambrleaks, and Interrogate
 	@if [ -z "$(PYTHON_SOURCES)" ]; then \
 		echo "lint-python: no Python sources under $(PYTHON_SOURCE_ROOTS)"; \
 	else \
@@ -249,7 +265,6 @@ lint-python: ## Run Ruff, Pylint, the df12 house lints, ambrleaks, and Interroga
 		$(RUFF) check $(PYTHON_SOURCES); \
 		$(PYLINT) $(PYTHON_SOURCES); \
 		$(AMBRLEAKS) $(PYTHON_SOURCES); \
-		$(INTERROGATE) $(PYTHON_SOURCES); \
 	fi
 
 lint-clippy: check-build-tools ## Run rustdoc and Clippy with the development flags

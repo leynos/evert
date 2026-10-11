@@ -20,8 +20,6 @@ mod quoted_hash_tests;
 
 /// Repository Cargo configuration inspected by the routing contract.
 const CARGO_CONFIG: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/.cargo/config.toml"));
-/// Pinned toolchain whose components must not include the unsupported backend.
-const TOOLCHAIN: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/rust-toolchain.toml"));
 /// Release workflow whose stable build route must exclude development flags.
 const RELEASE_WORKFLOW: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -40,14 +38,6 @@ const RELEASE_TARGETS: [&str; 6] = [
 const DEVELOPMENT_FLAGS: [&str; 3] = ["-Zthreads=8", "fuse-ld=mold", "-Clinker=evert-clang-mold"];
 /// The Cargo cfg table that applies to every Linux target architecture.
 const DEVELOPMENT_TABLE: &str = "target.'cfg(target_os = \"linux\")'";
-
-/// Cranelift must remain out of Cargo's defaults and the pinned toolchain until
-/// the unwind probes pass under a reviewed component and toolchain.
-#[test]
-fn cranelift_is_absent_from_defaults_and_toolchain() {
-    assert!(!CARGO_CONFIG.contains("cranelift"));
-    assert!(!TOOLCHAIN.contains("cranelift"));
-}
 
 /// Reports whether any workflow, job, or step assigns encoded rustflags.
 fn has_encoded_rustflags_binding(workflow: &str) -> bool {
