@@ -216,6 +216,22 @@ must not verify the specific SHA value.
   a pattern instead.
 - Do not fail a test purely because Dependabot bumped the pinned SHA.
 
+The Rust build-standard and Makefile route contracts share the test-only `Host`
+enum in `tests/build_standard_support/host.rs` and `MakeTarget` enum in
+`tests/build_standard_support/make_target.rs`. They represent only the host
+combinations and Make targets covered by the route contracts. The Makefile
+contract also uses the closed `MakeVariable` and `CargoTargetOption` enums in
+`tests/makefile_contract_support/route_input.rs`; reuse those types for
+supported variables and native/cross target forms instead of passing
+unrestricted strings. Its private `MakeTargetName` runner accepts shared
+`MakeTarget` values and the route-only `ClippyTarget`, keeping the Clippy
+target out of the build-standard contract's target set.
+
+Build-standard reader tests keep raw syntax in named scenario cases in
+`config_reader_contract.rs` and `make_reader_contract.rs`. Each case binds the
+fixture to its expected result; these are test-only data bundles, not validated
+runtime parser types.
+
 ```python
 import re
 

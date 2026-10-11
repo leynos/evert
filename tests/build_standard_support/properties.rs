@@ -5,7 +5,7 @@ use proptest::{prelude::*, test_runner::TestCaseError};
 use super::{
     ci_steps::{coverage_problems, linker_install_problems},
     config::{Flags, Pin, PinError, applies_to_target, config_problems},
-    make::{Assignment, assigned_rustflags, commands_from, held_out_problems_with},
+    make::{Assignment, MakeTarget, assigned_rustflags, commands_from, held_out_problems_with},
 };
 
 /// Flags required by the nightly Linux development route.
@@ -148,7 +148,7 @@ proptest! {
             "the wrapper reader must retain its own positional flags"
         );
 
-        let mut runner = |_target: &str, _host| Ok(command.clone());
+        let mut runner = |_target: MakeTarget, _host| Ok(command.clone());
         let (problems, read) = property_result(held_out_problems_with(&mut runner))?;
         prop_assert_eq!(read, 2, "both held-out routes must be inspected");
         prop_assert_eq!(
@@ -352,7 +352,7 @@ fn held_out_flags_detect_development_flag_after_split_codegen_pair() {
         "exec env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS=\"$effective_flags\" ",
         "\"$@\"' _ '-C metadata=ordinary -Zcodegen-backend=cranelift' cargo build\n"
     );
-    let mut runner = |_target: &str, _host| Ok(command.to_owned());
+    let mut runner = |_target: MakeTarget, _host| Ok(command.to_owned());
 
     let (problems, read) = property_result(held_out_problems_with(&mut runner))
         .expect("the injected make runner returns valid wrapper output");

@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use super::make::{Host, held_out_problems_with};
+use super::make::{Host, MakeTarget, held_out_problems_with};
 
 /// A valid held-out command retains the caller's flags and adds no development
 /// flags of its own.
@@ -32,28 +32,44 @@ const USES_CONFIGURATION: &str = "cargo build\n";
 /// The sibling target receives the compliant fixture so a finding belongs to
 /// the named command.
 #[rstest]
-#[case::coverage_preserves_caller_flags("coverage", CALLER_FLAGS, false)]
-#[case::release_preserves_caller_flags("release", CALLER_FLAGS, false)]
+#[case::coverage_preserves_caller_flags(MakeTarget::Coverage, CALLER_FLAGS, false)]
+#[case::release_preserves_caller_flags(MakeTarget::Release, CALLER_FLAGS, false)]
 #[case::coverage_keeps_caller_development_flags(
-    "coverage",
+    MakeTarget::Coverage,
     CALLER_SUPPLIES_DEVELOPMENT_FLAGS,
     false
 )]
-#[case::release_keeps_caller_development_flags("release", CALLER_SUPPLIES_DEVELOPMENT_FLAGS, false)]
-#[case::coverage_rejects_lost_caller_flags("coverage", DROPS_CALLER_FLAGS, true)]
-#[case::release_rejects_lost_caller_flags("release", DROPS_CALLER_FLAGS, true)]
-#[case::coverage_rejects_recipe_development_flags("coverage", ADDS_DEVELOPMENT_FLAG, true)]
-#[case::release_rejects_recipe_development_flags("release", ADDS_DEVELOPMENT_FLAG, true)]
-#[case::coverage_rejects_wrapper_development_flags("coverage", WRAPPER_ADDS_DEVELOPMENT_FLAG, true)]
-#[case::release_rejects_wrapper_development_flags("release", WRAPPER_ADDS_DEVELOPMENT_FLAG, true)]
-#[case::coverage_rejects_configuration_fallback("coverage", USES_CONFIGURATION, true)]
-#[case::release_rejects_configuration_fallback("release", USES_CONFIGURATION, true)]
+#[case::release_keeps_caller_development_flags(
+    MakeTarget::Release,
+    CALLER_SUPPLIES_DEVELOPMENT_FLAGS,
+    false
+)]
+#[case::coverage_rejects_lost_caller_flags(MakeTarget::Coverage, DROPS_CALLER_FLAGS, true)]
+#[case::release_rejects_lost_caller_flags(MakeTarget::Release, DROPS_CALLER_FLAGS, true)]
+#[case::coverage_rejects_recipe_development_flags(
+    MakeTarget::Coverage,
+    ADDS_DEVELOPMENT_FLAG,
+    true
+)]
+#[case::release_rejects_recipe_development_flags(MakeTarget::Release, ADDS_DEVELOPMENT_FLAG, true)]
+#[case::coverage_rejects_wrapper_development_flags(
+    MakeTarget::Coverage,
+    WRAPPER_ADDS_DEVELOPMENT_FLAG,
+    true
+)]
+#[case::release_rejects_wrapper_development_flags(
+    MakeTarget::Release,
+    WRAPPER_ADDS_DEVELOPMENT_FLAG,
+    true
+)]
+#[case::coverage_rejects_configuration_fallback(MakeTarget::Coverage, USES_CONFIGURATION, true)]
+#[case::release_rejects_configuration_fallback(MakeTarget::Release, USES_CONFIGURATION, true)]
 fn held_out_routes_preserve_caller_flags_and_exclude_development_flags(
-    #[case] checked_target: &str,
+    #[case] checked_target: MakeTarget,
     #[case] checked_output: &str,
     #[case] expected_problem: bool,
 ) -> Result<(), String> {
-    let mut runner = |target: &str, _host: Host| {
+    let mut runner = |target: MakeTarget, _host: Host| {
         Ok(if target == checked_target {
             checked_output
         } else {
@@ -68,10 +84,11 @@ fn held_out_routes_preserve_caller_flags_and_exclude_development_flags(
     if problems.is_empty() == expected_problem
         || problems
             .iter()
-            .any(|problem| !problem.contains(checked_target))
+            .any(|problem| !problem.contains(checked_target.as_str()))
     {
         return Err(format!(
-            "unexpected {checked_target} route findings: {problems:#?}"
+            "unexpected {} route findings: {problems:#?}",
+            checked_target.as_str()
         ));
     }
     Ok(())

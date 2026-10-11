@@ -49,11 +49,15 @@ compact and omits build output such as `target/`.
 │   ├── build_standard_support/
 │   │   ├── ci_steps.rs
 │   │   ├── config.rs
+│   │   ├── config_reader_contract.rs
 │   │   ├── coverage_contract.rs
 │   │   ├── held_out_contract.rs
+│   │   ├── host.rs
 │   │   ├── linux_config_contract.rs
 │   │   ├── make.rs
 │   │   ├── make_execution.rs
+│   │   ├── make_reader_contract.rs
+│   │   ├── make_target.rs
 │   │   ├── properties.rs
 │   │   ├── toolchain_contract.rs
 │   │   └── workflow_contract.rs
@@ -61,6 +65,7 @@ compact and omits build output such as `target/`.
 │   ├── makefile_contract_support/
 │   │   ├── clippy_target_route.rs
 │   │   ├── cross_caller_flags.rs
+│   │   ├── route_input.rs
 │   │   └── whitaker_binding.rs
 │   ├── stable_cargo_config.rs
 │   └── workflow_contracts/
@@ -143,6 +148,14 @@ compact and omits build output such as `target/`.
 
 - `tests/`: Holds integration and behavioural tests that exercise public
   behaviour.
+- `tests/build_standard_support/host.rs`: Shares supported host combinations
+  between build-standard and Makefile route contract tests.
+- `tests/build_standard_support/config_reader_contract.rs`: Checks raw config
+  and toolchain fixtures against expected diagnostics and pins.
+- `tests/build_standard_support/make_reader_contract.rs`: Checks raw Make
+  output fixtures against expected `RUSTFLAGS` interpretations.
+- `tests/build_standard_support/make_target.rs`: Shares finite Make target names
+  between build-standard and Makefile route contract tests.
 - `tests/build_backend_contract.rs`: Checks the development backend contract.
 - `tests/build_standard_contract.rs`: Checks target-specific development
   defaults, Make routing, and build-tool prerequisites.
@@ -152,7 +165,8 @@ compact and omits build output such as `target/`.
   contract tests.
 - `tests/makefile_contract.rs`: Checks the Makefile's public target behaviour.
 - `tests/makefile_contract_support/`: Holds helpers for Clippy target routing,
-  caller-supplied flags, and binding Whitaker gate contracts.
+  caller-supplied flags, finite Make route inputs, and binding Whitaker gate
+  contracts.
 - `tests/stable_cargo_config.rs`: Checks that stable Cargo handles the
   configured release route.
 - `tests/workflow_contracts/`: Holds pytest contracts for build-tool

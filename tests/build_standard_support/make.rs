@@ -12,48 +12,23 @@ use super::config::{
     Problems,
     THREADS_FLAG,
 };
+pub(crate) use super::{build_host::Host, make_target::MakeTarget};
 
 /// Makefile targets that build for development. A command in one either assigns
 /// `RUSTFLAGS` with the standard flags or assigns none and so takes the
 /// configuration's. The list is this repository's own, and a target that stops
 /// being defined fails the contract rather than dropping out of it.
-const DEVELOPMENT_TARGETS: &[&str] = &["test", "typecheck", "lint", "build"];
+const DEVELOPMENT_TARGETS: &[MakeTarget] = &[
+    MakeTarget::Test,
+    MakeTarget::Typecheck,
+    MakeTarget::Lint,
+    MakeTarget::Build,
+];
 /// Makefile targets that measure or ship, so every command assigns `RUSTFLAGS`
 /// and none carries a standard flag.
-const HELD_OUT_TARGETS: &[&str] = &["coverage", "release"];
+const HELD_OUT_TARGETS: &[MakeTarget] = &[MakeTarget::Coverage, MakeTarget::Release];
 const INHERIT_PLUS: &str = "${RUSTFLAGS:+$RUSTFLAGS }";
 const INHERIT_DASH: &str = "${RUSTFLAGS-}";
-
-/// The host `make` is told it runs on, through `BUILD_HOST_OS`.
-#[derive(Clone, Copy)]
-pub enum Host {
-    LinuxX86,
-    LinuxArm,
-    Darwin,
-}
-
-impl Host {
-    /// Returns the value `uname -s` reports for the host.
-    const fn make_value(self) -> &'static str {
-        match self {
-            Self::LinuxX86 | Self::LinuxArm => "Linux",
-            Self::Darwin => "Darwin",
-        }
-    }
-
-    /// Returns the host architecture Make uses to scope its development flags.
-    const fn arch_value(self) -> &'static str {
-        match self {
-            Self::LinuxX86 | Self::Darwin => "x86_64",
-            Self::LinuxArm => "aarch64",
-        }
-    }
-
-    /// Returns whether the host takes the selected development route.
-    const fn takes_development_flags(self) -> bool {
-        matches!(self, Self::LinuxX86 | Self::LinuxArm)
-    }
-}
 
 /// What one `make -n` command assigns to `RUSTFLAGS`.
 #[derive(Debug, PartialEq, Eq)]
@@ -206,15 +181,16 @@ pub fn commands_from(stdout: &str) -> Result<Vec<Assignment>, String> {
 }
 
 /// Runs the separate Make process boundary for one host and target.
-fn run_make_dry_run(target: &str, host: Host) -> Result<String, String> {
-    super::make_execution::run_make_dry_run(target, host.make_value(), host.arch_value())
+fn run_make_dry_run(target: MakeTarget, host: Host) -> Result<String, String> {
+    let (host_os, host_arch) = host.make_values();
+    super::make_execution::run_make_dry_run(target.as_str(), host_os, host_arch)
 }
 
 /// Obtains output through the injected runner, then parses it at this boundary.
 fn commands_with(
-    target: &str,
+    target: MakeTarget,
     host: Host,
-    runner: &mut impl FnMut(&str, Host) -> Result<String, String>,
+    runner: &mut impl FnMut(MakeTarget, Host) -> Result<String, String>,
 ) -> Result<Vec<Assignment>, String> {
     commands_from(&runner(target, host)?)
 }
@@ -223,7 +199,7 @@ fn commands_with(
 /// `RUSTFLAGS` keeps the caller's own flags and restates the frontend and
 /// linker flags on a nightly pin and the selected Linux target.
 fn development_problem(
-    target: &str,
+    target: MakeTarget,
     host: Host,
     pin: Pin,
     assignment: &Assignment,
@@ -231,16 +207,20 @@ fn development_problem(
     let Assignment::Flags(flags, inherits) = assignment else {
         return None;
     };
+    let (host_os, host_arch) = host.make_values();
     if !inherits {
         return Some(format!(
-            "`make {target}` on {} drops the caller's RUSTFLAGS",
-            host.make_value()
+            "`make {}` on {host_os}/{host_arch} drops the caller's RUSTFLAGS",
+            target.as_str()
         ));
     }
     let reason = flags
         .meets(pin.takes_threads() && host.takes_development_flags())
         .err()?;
-    Some(format!("`make {target}` on {} {reason}", host.make_value()))
+    Some(format!(
+        "`make {}` on {host_os}/{host_arch} {reason}",
+        target.as_str()
+    ))
 }
 
 /// Returns every complaint about the development targets on one host, and how
@@ -260,11 +240,11 @@ pub fn development_problems(host: Host, pin: Pin) -> Result<(Problems, usize), S
 pub fn development_problems_with(
     host: Host,
     pin: Pin,
-    runner: &mut impl FnMut(&str, Host) -> Result<String, String>,
+    runner: &mut impl FnMut(MakeTarget, Host) -> Result<String, String>,
 ) -> Result<(Problems, usize), String> {
     let mut problems = Vec::new();
     let mut read = 0;
-    for target in DEVELOPMENT_TARGETS {
+    for &target in DEVELOPMENT_TARGETS {
         let commands = commands_with(target, host, runner)?;
         read += commands
             .iter()
@@ -282,14 +262,18 @@ pub fn development_problems_with(
 /// Returns every complaint about one held-out command: it assigns nothing, so
 /// it takes the configuration's flags, or the assignment names a development
 /// flag.
-fn held_out_command_problems(target: &str, assignment: &Assignment) -> Problems {
+fn held_out_command_problems(target: MakeTarget, assignment: &Assignment) -> Problems {
     let Assignment::Flags(flags, inherits) = assignment else {
         return vec![format!(
-            "`make {target}` runs a command that takes the configuration's flags"
+            "`make {}` runs a command that takes the configuration's flags",
+            target.as_str()
         )];
     };
     if !inherits {
-        return vec![format!("`make {target}` drops the caller's RUSTFLAGS")];
+        return vec![format!(
+            "`make {}` drops the caller's RUSTFLAGS",
+            target.as_str()
+        )];
     }
     let named = [
         (flags.names_backend(), BACKEND_FLAG),
@@ -300,7 +284,7 @@ fn held_out_command_problems(target: &str, assignment: &Assignment) -> Problems 
     named
         .into_iter()
         .filter(|(is_named, _)| *is_named)
-        .map(|(_, flag)| format!("`make {target}` takes {flag}"))
+        .map(|(_, flag)| format!("`make {}` takes {flag}", target.as_str()))
         .collect()
 }
 
@@ -317,11 +301,11 @@ pub fn held_out_problems() -> Result<(Problems, usize), String> {
 
 /// Checks coverage and release routes with an injected `make -n` output runner.
 pub fn held_out_problems_with(
-    runner: &mut impl FnMut(&str, Host) -> Result<String, String>,
+    runner: &mut impl FnMut(MakeTarget, Host) -> Result<String, String>,
 ) -> Result<(Problems, usize), String> {
     let mut problems = Vec::new();
     let mut read = 0;
-    for target in HELD_OUT_TARGETS {
+    for &target in HELD_OUT_TARGETS {
         let commands = commands_with(target, Host::LinuxX86, runner)?;
         read += commands.len();
         problems.extend(

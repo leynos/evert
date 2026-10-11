@@ -7,6 +7,15 @@
 
 use std::{io, process::Command};
 
+#[path = "build_standard_support/host.rs"]
+mod build_host;
+use build_host::Host;
+#[path = "build_standard_support/make_target.rs"]
+mod make_target;
+use make_target::MakeTarget;
+#[path = "makefile_contract_support/route_input.rs"]
+mod route_input;
+use route_input::{MakeTargetName, MakeVariable};
 use rstest::rstest;
 
 /// Cargo executable substituted into evaluated Make commands.
@@ -39,17 +48,17 @@ struct MakeDryRun {
 }
 
 /// Evaluates a Make target without running its recipe commands.
-fn make_dry_run(target: &str, build_host: &str, build_arch: &str) -> io::Result<MakeDryRun> {
-    make_dry_run_with_options(target, build_host, build_arch, &[])
+fn make_dry_run(target: MakeTarget, host: Host) -> io::Result<MakeDryRun> {
+    make_dry_run_with_options(target, host, &[])
 }
 
 /// Evaluates a Make route with explicit command-line variable assignments.
-fn make_dry_run_with_options(
-    target: &str,
-    build_host: &str,
-    build_arch: &str,
-    options: &[(&str, &str)],
+fn make_dry_run_with_options<T: MakeTargetName>(
+    target: T,
+    host: Host,
+    options: &[(MakeVariable, &str)],
 ) -> io::Result<MakeDryRun> {
+    let (build_host, build_arch) = host.make_values();
     let build_host_assignment = format!("BUILD_HOST_OS={build_host}");
     let build_arch_assignment = format!("BUILD_HOST_ARCH={build_arch}");
     let mut command = Command::new("make");
@@ -58,7 +67,7 @@ fn make_dry_run_with_options(
             "--dry-run",
             "--always-make",
             "--no-print-directory",
-            target,
+            target.into_make_target(),
             &build_host_assignment,
             &build_arch_assignment,
             "CARGO=probe-cargo",
@@ -68,7 +77,7 @@ fn make_dry_run_with_options(
         .env("GITHUB_ACTIONS", "false")
         .current_dir(env!("CARGO_MANIFEST_DIR"));
     for (name, value) in options {
-        command.arg(format!("{name}={value}"));
+        command.arg(format!("{}={value}", name.as_str()));
     }
     let output = command.output()?;
     Ok(MakeDryRun {
@@ -136,10 +145,9 @@ fn effective_cargo_route(command: &str) -> &str {
 }
 
 /// Checks that a development command keeps the standard flags for its host.
-fn has_development_route(command: &str, build_host: &str, build_arch: &str) -> bool {
+fn has_development_route(command: &str, host: Host) -> bool {
     let required_flags = ["env -u CARGO_ENCODED_RUSTFLAGS", "-D warnings"];
-    let development_is_supported =
-        build_host == "Linux" && matches!(build_arch, "x86_64" | "aarch64");
+    let development_is_supported = host.takes_development_flags();
     let effective_route = effective_cargo_route(command);
     let has_guarded_flags = command.contains("bash -c 'make_flags=$1; shift; effective_flags=");
     let rustflags_assignment = if has_guarded_flags {
@@ -158,28 +166,28 @@ fn has_development_route(command: &str, build_host: &str, build_arch: &str) -> b
 /// Confirms every development Cargo line uses the caller's injected binary,
 /// preserves inherited `RUSTFLAGS`, and carries the selected host flags.
 #[rstest]
-#[case::linux_x86_64_build("build", 1, "Linux", "x86_64")]
-#[case::darwin_build_excludes_dev_flags("build", 1, "Darwin", "x86_64")]
-#[case::linux_aarch64_build("build", 1, "Linux", "aarch64")]
-#[case::linux_x86_64_test("test", 2, "Linux", "x86_64")]
-#[case::darwin_test_excludes_dev_flags("test", 2, "Darwin", "x86_64")]
-#[case::linux_aarch64_test("test", 2, "Linux", "aarch64")]
-#[case::linux_x86_64_lint("lint", 2, "Linux", "x86_64")]
-#[case::darwin_lint_excludes_dev_flags("lint", 2, "Darwin", "x86_64")]
-#[case::linux_aarch64_lint("lint", 2, "Linux", "aarch64")]
-#[case::linux_x86_64_typecheck("typecheck", 1, "Linux", "x86_64")]
-#[case::darwin_typecheck_excludes_dev_flags("typecheck", 1, "Darwin", "x86_64")]
-#[case::linux_aarch64_typecheck("typecheck", 1, "Linux", "aarch64")]
+#[case::linux_x86_64_build(MakeTarget::Build, 1, Host::LinuxX86)]
+#[case::darwin_build_excludes_dev_flags(MakeTarget::Build, 1, Host::Darwin)]
+#[case::linux_aarch64_build(MakeTarget::Build, 1, Host::LinuxArm)]
+#[case::linux_x86_64_test(MakeTarget::Test, 2, Host::LinuxX86)]
+#[case::darwin_test_excludes_dev_flags(MakeTarget::Test, 2, Host::Darwin)]
+#[case::linux_aarch64_test(MakeTarget::Test, 2, Host::LinuxArm)]
+#[case::linux_x86_64_lint(MakeTarget::Lint, 2, Host::LinuxX86)]
+#[case::darwin_lint_excludes_dev_flags(MakeTarget::Lint, 2, Host::Darwin)]
+#[case::linux_aarch64_lint(MakeTarget::Lint, 2, Host::LinuxArm)]
+#[case::linux_x86_64_typecheck(MakeTarget::Typecheck, 1, Host::LinuxX86)]
+#[case::darwin_typecheck_excludes_dev_flags(MakeTarget::Typecheck, 1, Host::Darwin)]
+#[case::linux_aarch64_typecheck(MakeTarget::Typecheck, 1, Host::LinuxArm)]
 fn development_targets_expand_each_cargo_command(
-    #[case] target: &str,
+    #[case] target: MakeTarget,
     #[case] expected_commands: usize,
-    #[case] build_host: &str,
-    #[case] build_arch: &str,
+    #[case] host: Host,
 ) {
-    let run = make_dry_run(target, build_host, build_arch).expect("make --dry-run must run");
+    let run = make_dry_run(target, host).expect("make --dry-run must run");
     assert!(
         run.succeeded,
-        "`make --dry-run {target}` failed for {build_host}: {}",
+        "`make --dry-run {}` failed for {host:?}: {}",
+        target.as_str(),
         run.stderr
     );
 
@@ -187,18 +195,20 @@ fn development_targets_expand_each_cargo_command(
     assert_eq!(
         commands.len(),
         expected_commands,
-        "`make --dry-run {target}` must expose every Cargo invocation: {}",
+        "`make --dry-run {}` must expose every Cargo invocation: {}",
+        target.as_str(),
         run.stdout
     );
     for command in &commands {
         assert!(
             command.split_whitespace().any(|word| word == PROBE_CARGO),
-            "`make --dry-run {target}` bypassed CARGO=probe-cargo: {command}"
+            "`make --dry-run {}` bypassed CARGO=probe-cargo: {command}",
+            target.as_str()
         );
         assert!(
-            has_development_route(command, build_host, build_arch),
-            "`make --dry-run {target}` selected the wrong development route for \
-             {build_host}/{build_arch}: {command}"
+            has_development_route(command, host),
+            "`make --dry-run {}` selected the wrong development route for {host:?}: {command}",
+            target.as_str()
         );
     }
 
@@ -207,7 +217,8 @@ fn development_targets_expand_each_cargo_command(
             .expect("development targets must preflight before exposing Cargo commands");
     assert!(
         preflight_position < first_cargo_position,
-        "`make --dry-run {target}` must check build tools before compilation: {}",
+        "`make --dry-run {}` must check build tools before compilation: {}",
+        target.as_str(),
         run.stdout
     );
 }
@@ -216,10 +227,9 @@ fn development_targets_expand_each_cargo_command(
 #[test]
 fn whitaker_does_not_inherit_development_flags() {
     let run = make_dry_run_with_options(
-        "lint",
-        "Linux",
-        "x86_64",
-        &[("RUST_FLAGS", HOSTILE_RUST_FLAGS)],
+        MakeTarget::Lint,
+        Host::LinuxX86,
+        &[(MakeVariable::RustFlags, HOSTILE_RUST_FLAGS)],
     )
     .expect("make --dry-run must run");
     assert!(
@@ -264,20 +274,20 @@ fn whitaker_does_not_inherit_development_flags() {
 /// Keeps coverage and stable release compilation outside the development
 /// backend, frontend, and linker route.
 #[rstest]
-#[case::linux_x86_64_coverage("coverage", 1, "Linux", "x86_64")]
-#[case::linux_x86_64_release("release", 1, "Linux", "x86_64")]
-#[case::linux_aarch64_release("release", 1, "Linux", "aarch64")]
-#[case::darwin_x86_64_release("release", 1, "Darwin", "x86_64")]
+#[case::linux_x86_64_coverage(MakeTarget::Coverage, 1, Host::LinuxX86)]
+#[case::linux_x86_64_release(MakeTarget::Release, 1, Host::LinuxX86)]
+#[case::linux_aarch64_release(MakeTarget::Release, 1, Host::LinuxArm)]
+#[case::darwin_x86_64_release(MakeTarget::Release, 1, Host::Darwin)]
 fn excluded_targets_expand_their_own_cargo_commands(
-    #[case] target: &str,
+    #[case] target: MakeTarget,
     #[case] expected_commands: usize,
-    #[case] build_host: &str,
-    #[case] build_arch: &str,
+    #[case] host: Host,
 ) {
-    let run = make_dry_run(target, build_host, build_arch).expect("make --dry-run must run");
+    let run = make_dry_run(target, host).expect("make --dry-run must run");
     assert!(
         run.succeeded,
-        "`make --dry-run {target}` failed for {build_host}: {}",
+        "`make --dry-run {}` failed for {host:?}: {}",
+        target.as_str(),
         run.stderr
     );
 
@@ -285,32 +295,36 @@ fn excluded_targets_expand_their_own_cargo_commands(
     assert_eq!(
         commands.len(),
         expected_commands,
-        "`make --dry-run {target}` must expose every Cargo invocation: {}",
+        "`make --dry-run {}` must expose every Cargo invocation: {}",
+        target.as_str(),
         run.stdout
     );
     for command in &commands {
         assert!(
             command.split_whitespace().any(|word| word == PROBE_CARGO),
-            "`make --dry-run {target}` bypassed CARGO=probe-cargo: {command}"
+            "`make --dry-run {}` bypassed CARGO=probe-cargo: {command}",
+            target.as_str()
         );
         assert!(
             command.contains("env -u CARGO_ENCODED_RUSTFLAGS"),
-            "`make --dry-run {target}` must clear encoded flags before applying its route: \
-             {command}"
+            "`make --dry-run {}` must clear encoded flags before applying its route: {command}",
+            target.as_str()
         );
         assert!(
             command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }"),
-            "held-out target {target} must preserve caller RUSTFLAGS: {command}"
+            "held-out target {} must preserve caller RUSTFLAGS: {command}",
+            target.as_str()
         );
         for development_flag in DEVELOPMENT_FLAGS {
             assert!(
                 !command.contains(development_flag),
-                "`make --dry-run {target}` inherited {development_flag}: {command}"
+                "`make --dry-run {}` inherited {development_flag}: {command}",
+                target.as_str()
             );
         }
     }
 
-    if target == "coverage" {
+    if matches!(target, MakeTarget::Coverage) {
         let coverage_command = commands
             .first()
             .expect("coverage must expose its Cargo invocation");

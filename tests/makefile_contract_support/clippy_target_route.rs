@@ -8,61 +8,54 @@ use super::{
     CROSS_TARGET,
     DEVELOPMENT_FLAGS,
     MakeDryRun,
+    MakeTarget,
+    MakeVariable,
     NATIVE_JOINED_TARGET,
     NATIVE_SPLIT_TARGET,
     NATIVE_TARGET,
+    build_host::Host,
     cargo_invocation_lines,
     effective_cargo_route,
     has_development_route,
     make_dry_run_with_options,
+    route_input::{CargoTargetOption, ClippyTarget},
 };
 
 /// One target-selection input and the expected route for each Cargo command.
 struct TargetRouteCase {
-    target: &'static str,
-    variable: &'static str,
+    target: MakeTarget,
+    variable: MakeVariable,
     value: &'static str,
     expected_development_routes: [bool; 2],
 }
 
 /// Native, cross, malformed, and unrelated target-like options select routes.
 #[rstest]
-#[case::cross_build_target_setting(TargetRouteCase { target: "test", variable: "CARGO_BUILD_TARGET", value: CROSS_TARGET, expected_development_routes: [false, false] })]
-#[case::cross_split_cargo_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: CROSS_SPLIT_TARGET, expected_development_routes: [true, false] })]
-#[case::cross_joined_cargo_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: CROSS_JOINED_TARGET, expected_development_routes: [true, false] })]
-#[case::cross_split_test_target(TargetRouteCase { target: "test", variable: "TEST_FLAGS", value: CROSS_SPLIT_TARGET, expected_development_routes: [false, true] })]
-#[case::cross_joined_test_target(TargetRouteCase { target: "test", variable: "TEST_FLAGS", value: CROSS_JOINED_TARGET, expected_development_routes: [false, true] })]
+#[case::cross_build_target_setting(TargetRouteCase { target: MakeTarget::Test, variable: MakeVariable::CargoBuildTarget, value: CROSS_TARGET, expected_development_routes: [false, false] })]
+#[case::cross_split_cargo_target(TargetRouteCase { target: MakeTarget::Lint, variable: MakeVariable::CargoFlags, value: CROSS_SPLIT_TARGET, expected_development_routes: [true, false] })]
+#[case::cross_joined_cargo_target(TargetRouteCase { target: MakeTarget::Lint, variable: MakeVariable::CargoFlags, value: CROSS_JOINED_TARGET, expected_development_routes: [true, false] })]
+#[case::cross_split_test_target(TargetRouteCase { target: MakeTarget::Test, variable: MakeVariable::TestFlags, value: CROSS_SPLIT_TARGET, expected_development_routes: [false, true] })]
+#[case::cross_joined_test_target(TargetRouteCase { target: MakeTarget::Test, variable: MakeVariable::TestFlags, value: CROSS_JOINED_TARGET, expected_development_routes: [false, true] })]
 #[case::test_target_after_separator_is_ignored(
     TargetRouteCase {
-        target: "test",
-        variable: "TEST_FLAGS",
+        target: MakeTarget::Test,
+        variable: MakeVariable::TestFlags,
         value: "--all-targets --all-features -- --target=aarch64-unknown-linux-gnu",
         expected_development_routes: [true, true],
     }
 )]
-#[case::malformed_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: "--target=", expected_development_routes: [true, false] })]
-#[case::multiple_targets(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: "--target x86_64-unknown-linux-gnu --target aarch64-unknown-linux-gnu", expected_development_routes: [true, false] })]
-#[case::native_build_target_setting(TargetRouteCase { target: "test", variable: "CARGO_BUILD_TARGET", value: NATIVE_TARGET, expected_development_routes: [true, true] })]
-#[case::native_split_cargo_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: NATIVE_SPLIT_TARGET, expected_development_routes: [true, true] })]
-#[case::native_joined_cargo_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: NATIVE_JOINED_TARGET, expected_development_routes: [true, true] })]
-#[case::native_split_test_target(TargetRouteCase { target: "test", variable: "TEST_FLAGS", value: NATIVE_SPLIT_TARGET, expected_development_routes: [true, true] })]
-#[case::native_joined_test_target(TargetRouteCase { target: "test", variable: "TEST_FLAGS", value: NATIVE_JOINED_TARGET, expected_development_routes: [true, true] })]
-#[case::target_directory_is_not_a_target(TargetRouteCase { target: "lint", variable: "CARGO_FLAGS", value: "--target-dir target", expected_development_routes: [true, true] })]
+#[case::malformed_target(TargetRouteCase { target: MakeTarget::Lint, variable: MakeVariable::CargoFlags, value: "--target=", expected_development_routes: [true, false] })]
+#[case::multiple_targets(TargetRouteCase { target: MakeTarget::Lint, variable: MakeVariable::CargoFlags, value: "--target x86_64-unknown-linux-gnu --target aarch64-unknown-linux-gnu", expected_development_routes: [true, false] })]
+#[case::native_build_target_setting(TargetRouteCase { target: MakeTarget::Test, variable: MakeVariable::CargoBuildTarget, value: NATIVE_TARGET, expected_development_routes: [true, true] })]
+#[case::native_split_cargo_target(TargetRouteCase { target: MakeTarget::Lint, variable: MakeVariable::CargoFlags, value: NATIVE_SPLIT_TARGET, expected_development_routes: [true, true] })]
+#[case::native_joined_cargo_target(TargetRouteCase { target: MakeTarget::Lint, variable: MakeVariable::CargoFlags, value: NATIVE_JOINED_TARGET, expected_development_routes: [true, true] })]
+#[case::native_split_test_target(TargetRouteCase { target: MakeTarget::Test, variable: MakeVariable::TestFlags, value: NATIVE_SPLIT_TARGET, expected_development_routes: [true, true] })]
+#[case::native_joined_test_target(TargetRouteCase { target: MakeTarget::Test, variable: MakeVariable::TestFlags, value: NATIVE_JOINED_TARGET, expected_development_routes: [true, true] })]
+#[case::target_directory_is_not_a_target(TargetRouteCase { target: MakeTarget::Lint, variable: MakeVariable::CargoFlags, value: "--target-dir target", expected_development_routes: [true, true] })]
 fn explicit_target_selects_development_route(#[case] case: TargetRouteCase) {
-    assert!(
-        matches!(
-            case.variable,
-            "CARGO_BUILD_TARGET" | "CARGO_FLAGS" | "TEST_FLAGS"
-        ),
-        "each routing case names a known Make variable"
-    );
-    let run = make_dry_run_with_options(
-        case.target,
-        "Linux",
-        "x86_64",
-        &[(case.variable, case.value)],
-    )
-    .expect("make --dry-run must run");
+    let run =
+        make_dry_run_with_options(case.target, Host::LinuxX86, &[(case.variable, case.value)])
+            .expect("make --dry-run must run");
     assert!(
         run.succeeded,
         "target-selection dry run failed: {}",
@@ -73,7 +66,7 @@ fn explicit_target_selects_development_route(#[case] case: TargetRouteCase) {
         commands.len(),
         2,
         "`make --dry-run {}` must expose both Cargo invocations: {}",
-        case.target,
+        case.target.as_str(),
         run.stdout
     );
     let [first, second] = commands.as_slice() else {
@@ -99,11 +92,10 @@ fn explicit_target_selects_development_route(#[case] case: TargetRouteCase) {
 #[test]
 fn typecheck_ignores_rustc_target_after_cargo_separator() {
     let run = make_dry_run_with_options(
-        "typecheck",
-        "Linux",
-        "x86_64",
+        MakeTarget::Typecheck,
+        Host::LinuxX86,
         &[(
-            "CARGO_FLAGS",
+            MakeVariable::CargoFlags,
             "--all-targets --all-features -- --target aarch64-unknown-linux-gnu",
         )],
     )
@@ -118,7 +110,7 @@ fn typecheck_ignores_rustc_target_after_cargo_separator() {
         );
     };
     assert!(
-        has_development_route(command, "Linux", "x86_64"),
+        has_development_route(command, Host::LinuxX86),
         "Make counted rustc-only target text as a Cargo cross target: {command}"
     );
 }
@@ -154,24 +146,24 @@ fn clippy_target_flags_route_rustdoc_and_clippy_separately(
 
 /// Clippy target options select the Clippy route while rustdoc stays native.
 #[rstest]
-#[case::cross_split_target(CROSS_SPLIT_TARGET, false)]
-#[case::cross_joined_target(CROSS_JOINED_TARGET, false)]
-#[case::native_split_target(NATIVE_SPLIT_TARGET, true)]
-#[case::native_joined_target(NATIVE_JOINED_TARGET, true)]
+#[case::cross_split_target(CargoTargetOption::CrossSplit, false)]
+#[case::cross_joined_target(CargoTargetOption::CrossJoined, false)]
+#[case::native_split_target(CargoTargetOption::NativeSplit, true)]
+#[case::native_joined_target(CargoTargetOption::NativeJoined, true)]
 fn clippy_flags_select_its_target_route(
-    #[case] target_option: &str,
+    #[case] target_option: CargoTargetOption,
     #[case] clippy_keeps_development_flags: bool,
 ) {
-    let clippy_flags = format!("--all-targets --all-features {target_option}");
+    let clippy_flags = format!("--all-targets --all-features {}", target_option.as_str());
     assert_lint_routes(&clippy_flags, None, true, clippy_keeps_development_flags);
 }
 
 /// Target-like rustc options after Cargo's separator do not select its route.
 #[rstest]
-#[case::split_target_after_separator("--target aarch64-unknown-linux-gnu")]
-#[case::joined_target_after_separator("--target=aarch64-unknown-linux-gnu")]
-fn clippy_ignores_rustc_targets_after_separator(#[case] rustc_target: &str) {
-    let clippy_flags = format!("--all-targets --all-features -- {rustc_target}");
+#[case::split_target_after_separator(CargoTargetOption::CrossSplit)]
+#[case::joined_target_after_separator(CargoTargetOption::CrossJoined)]
+fn clippy_ignores_rustc_targets_after_separator(#[case] rustc_target: CargoTargetOption) {
+    let clippy_flags = format!("--all-targets --all-features -- {}", rustc_target.as_str());
     assert_lint_routes(&clippy_flags, None, true, true);
 }
 
@@ -198,11 +190,11 @@ fn assert_lint_routes(
 
 /// Expands lint-clippy with explicit Cargo flags and optional environment target.
 fn lint_clippy_dry_run(clippy_flags: &str, cargo_build_target: Option<&str>) -> MakeDryRun {
-    let mut options = vec![("CLIPPY_FLAGS", clippy_flags)];
+    let mut options = vec![(MakeVariable::ClippyFlags, clippy_flags)];
     if let Some(target) = cargo_build_target {
-        options.push(("CARGO_BUILD_TARGET", target));
+        options.push((MakeVariable::CargoBuildTarget, target));
     }
-    match make_dry_run_with_options("lint-clippy", "Linux", "x86_64", &options) {
+    match make_dry_run_with_options(ClippyTarget::LintClippy, Host::LinuxX86, &options) {
         Ok(run) => run,
         Err(error) => panic!("make --dry-run must run: {error}"),
     }
@@ -216,7 +208,7 @@ fn assert_route(command: &str, should_keep_development_flags: bool, tool: &str) 
     );
     if should_keep_development_flags {
         assert!(
-            has_development_route(command, "Linux", "x86_64"),
+            has_development_route(command, Host::LinuxX86),
             "{tool} lost the expected development route: {command}"
         );
     } else {
