@@ -1,6 +1,5 @@
-.PHONY: interrogate
 .PHONY: help all clean test build release coverage lint fmt check-fmt \
-	markdownlint nixie audit rust-audit spelling test-workflow-contracts
+	markdownlint nixie audit rust-audit spelling test-workflow-contracts interrogate
 
 SHELL := bash
 
