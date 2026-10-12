@@ -37,6 +37,7 @@ extend-ignore-re = [
     "(?m)^      # \\.cargo/config\\.toml links with clang and the mold linker on$",
     "(?m)^      # exactly as CI.*Install mold linker.*$",
     "(?m)^    let make_flags = \"-Clink-arg=-Wl,--undefined=mold_init\";$",
+    "(?m)^LINKER_NAME = \"mold\"$",
     "(?m)^[ ]+\"mold\",$",
     "(?m)^[ ]+linker_binary_version mold$",
     "(?m)^[ ]+types: \\[opened, reopened, synchronize, labeled, ready_for_review\\]$",

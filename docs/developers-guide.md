@@ -119,7 +119,10 @@ in `pyproject.toml`:
   tools, so all process spawning goes through that one helper. It uses no
   shell, takes a fixed argument list, and resolves the executable itself;
   `command_runner_test.py` holds those properties. Every other module that
-  imports `subprocess` fails the gate.
+  imports `subprocess` fails the gate. `build_tools_script_support.py` owns
+  fixtures only for installer, preflight, and Clang-wrapper contracts. It runs
+  those scripts through `command_runner.py`; it is not a general shell-test
+  framework.
 
 Docstrings follow the numpy convention (Ruff's `D` and `DOC` rules). The line
 length is 88, and a module may have at most 400 lines, matching the

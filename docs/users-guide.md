@@ -17,7 +17,8 @@ including the default build configuration and platform linker details.
 
 The generated `Makefile` exposes these public targets:
 
-- `make all` runs formatting, linting, tests, spelling, and workflow contracts.
+- `make all` runs formatting, linting, typechecking, tests, spelling, and
+  workflow contracts.
 - `make check-fmt` verifies Rust and Markdown formatting.
 - `make lint` checks Python docstring coverage with Interrogate, then runs
   rustdoc, Clippy, Whitaker, and the Python linters with warnings denied.
@@ -36,6 +37,8 @@ The generated `Makefile` exposes these public targets:
 - `make build` builds the debug target.
 - `make install-build-tools` installs the pinned Rust toolchain and local
   linker tools needed by the standard development build.
+- `make check-build-tools` checks that the pinned toolchain, linker, and Clang
+  wrapper are installed and selected correctly; it does not install them.
 - `make release` builds the release target.
 - `make coverage` writes `lcov.info` using `cargo llvm-cov` and `lld`.
 - `make audit` derives the Rust workspace root with `cargo metadata` and runs
@@ -44,6 +47,9 @@ The generated `Makefile` exposes these public targets:
 - `make spelling` refreshes the generated spelling configuration and scans
   tracked files.
 - `make nixie` validates Mermaid diagrams.
+
+The former `make dev-build` and `make dev-test` targets are no longer
+available. Use `make build` and `make test` for the standard development route.
 
 Before the first local build, run `make install-build-tools` to install the
 pinned Rust toolchain and linker tools for native Linux x86_64 and aarch64

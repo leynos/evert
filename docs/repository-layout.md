@@ -41,6 +41,7 @@ compact and omits build output such as `target/`.
 │   ├── lib.rs
 │   └── main.rs
 ├── tests/
+│   ├── application_output.rs
 │   ├── build_backend_contract.rs
 │   ├── build_backend_contract_support/
 │   │   ├── quoted_hash.rs
@@ -70,12 +71,16 @@ compact and omits build output such as `target/`.
 │   ├── stable_cargo_config.rs
 │   └── workflow_contracts/
 │       ├── build_tools_cache_test.py
+│       ├── build_tools_check_test.py
 │       ├── build_tools_coverage_test.py
+│       ├── build_tools_install_test.py
+│       ├── build_tools_script_support.py
 │       ├── build_tools_rules.py
 │       ├── build_tools_runner.py
 │       ├── build_tools_runner_test.py
 │       ├── build_tools_test.py
 │       ├── cargo_selection_test.py
+│       ├── clang_linker_test.py
 │       ├── command_runner.py
 │       ├── command_runner_test.py
 │       ├── coverage_build_tools_test.py
@@ -152,6 +157,8 @@ compact and omits build output such as `target/`.
 
 - `tests/`: Holds integration and behavioural tests that exercise public
   behaviour.
+- `tests/application_output.rs`: Checks the generated application's standard
+  output and process exit status.
 - `tests/build_standard_support/host.rs`: Shares supported host combinations
   between build-standard and Makefile route contract tests.
 - `tests/build_standard_support/config_reader_contract.rs`: Checks raw config
@@ -178,9 +185,10 @@ compact and omits build output such as `target/`.
   routing, Markdown formatting, mutation testing, supported-route inventory,
   and Whitaker provisioning. `python_lint_gateway_test.py` guards the Python
   lint gateway wiring in the `Makefile` and `pyproject.toml`, and
-  `command_runner.py` is the one place these tests start a process.
-  `make test-workflow-contracts` also runs the shared CV-005 contracts with
-  `.github/cv005.toml`.
+  `command_runner.py` is the one place these tests start a process. The
+  build-tool script support fixtures are used only by installer, preflight, and
+  Clang-wrapper contract tests. `make test-workflow-contracts` also runs the
+  shared CV-005 contracts with `.github/cv005.toml`.
 - `scripts/`: Installs and checks the pinned development compiler and linker
   prerequisites used by the Makefile.
 - `scripts/build-tools-common.sh`: Shares build-tool paths and checks between

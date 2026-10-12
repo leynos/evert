@@ -15,6 +15,7 @@ accepted = []
 # spelling. The shell diagnostic pattern includes source-level backslashes.
 # Ordinary prose and unrelated identifiers remain checked.
 ignore = [
+  '(?m)^LINKER_NAME = "mold"$',
   "CARGO_TERM_COLOR",
   "fuse-ld=mold",
   "install-mold",
