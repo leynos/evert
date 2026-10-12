@@ -27,6 +27,14 @@ def test_captures_output_and_status() -> None:
     ), f"unexpected result {result}"
 
 
+def test_runtime_annotations_resolve() -> None:
+    """Runtime annotation inspection resolves the command collection type."""
+    annotations = run_fixed_command.__annotations__
+    assert annotations["command"] == list[str], (
+        f"unexpected command annotation: {annotations!r}"
+    )
+
+
 def test_returns_a_failing_status_without_raising() -> None:
     """Callers judge the exit status themselves."""
     result = run_fixed_command(

@@ -15,11 +15,14 @@ running it. Callers must pass literal commands, never workflow or user input.
 import os
 import shutil
 import subprocess
+import types
 import typing as typ
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
-    from pathlib import Path
+else:
+    # CPython 3.12 evaluates annotations when this module is imported.
+    cabc = types.SimpleNamespace(Mapping=dict, Sequence=list)
 
 
 class CommandResult(typ.NamedTuple):
@@ -33,7 +36,7 @@ class CommandResult(typ.NamedTuple):
 def run_fixed_command(
     command: cabc.Sequence[str],
     *,
-    cwd: Path,
+    cwd: str | os.PathLike[str],
     environment: cabc.Mapping[str, str] | None = None,
 ) -> CommandResult:
     """Run a literal command without a shell and capture its output.
