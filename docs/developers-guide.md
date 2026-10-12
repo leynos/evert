@@ -113,16 +113,22 @@ in `pyproject.toml`:
 
 - Ruff's `assert` rule (`S101`) for files under `tests/`, because pytest relies
   on plain `assert` statements and rewrites them to report the compared values.
-- Ruff's subprocess import and call rules (`S404` and `S603`) for
+- Ruff's subprocess import and call rules (`S404` and `S603`), plus the
+  type-checking import rule (`TC003`), for
   `tests/workflow_contracts/command_runner.py` alone. No code change satisfies
-  those two rules, and some contracts can only be proved by running the real
-  tools, so all process spawning goes through that one helper. It uses no
+  the subprocess rules, and some contracts can only be proved by running the
+  real tools, so all process spawning goes through that one helper. It uses no
   shell, takes a fixed argument list, and resolves the executable itself;
   `command_runner_test.py` holds those properties. Every other module that
-  imports `subprocess` fails the gate. `build_tools_script_support.py` owns
-  fixtures only for installer, preflight, and Clang-wrapper contracts. It runs
-  those scripts through `command_runner.py`; it is not a general shell-test
-  framework.
+  imports `subprocess` fails the gate. The collection ABC import remains
+  available at runtime because coverage inspects the annotations and CPython
+  3.12 evaluates them when importing the module. The helper accepts
+  `collections.abc.Sequence[str]` for `command`, `str | os.PathLike[str]` for
+  `cwd`, and an optional `collections.abc.Mapping[str, str]` for `environment`.
+  Its regression test checks both runtime collection annotations.
+  `build_tools_script_support.py` owns fixtures only for installer, preflight,
+  and Clang-wrapper contracts. It runs those scripts through
+  `command_runner.py`; it is not a general shell-test framework.
 
 Docstrings follow the numpy convention (Ruff's `D` and `DOC` rules). The line
 length is 88, and a module may have at most 400 lines, matching the

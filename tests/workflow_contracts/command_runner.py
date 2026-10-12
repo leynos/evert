@@ -12,17 +12,11 @@ never uses a shell, and it resolves the executable to an absolute path before
 running it. Callers must pass literal commands, never workflow or user input.
 """
 
+import collections.abc as cabc
 import os
 import shutil
 import subprocess
-import types
 import typing as typ
-
-if typ.TYPE_CHECKING:
-    import collections.abc as cabc
-else:
-    # CPython 3.12 evaluates annotations when this module is imported.
-    cabc = types.SimpleNamespace(Mapping=dict, Sequence=list)
 
 
 class CommandResult(typ.NamedTuple):

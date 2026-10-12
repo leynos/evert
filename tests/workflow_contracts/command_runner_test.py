@@ -5,6 +5,7 @@ shell, never rewrites its arguments, and resolves the executable itself. These
 tests fail if a change gives up any of those properties.
 """
 
+import collections.abc as cabc
 import stat
 import sys
 from pathlib import Path
@@ -30,8 +31,11 @@ def test_captures_output_and_status() -> None:
 def test_runtime_annotations_resolve() -> None:
     """Runtime annotation inspection resolves the command collection type."""
     annotations = run_fixed_command.__annotations__
-    assert annotations["command"] == list[str], (
+    assert annotations["command"] == cabc.Sequence[str], (
         f"unexpected command annotation: {annotations!r}"
+    )
+    assert annotations["environment"] == cabc.Mapping[str, str] | None, (
+        f"unexpected environment annotation: {annotations!r}"
     )
 
 

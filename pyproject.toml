@@ -104,10 +104,13 @@ extend-ignore = [
 # and every call are flagged unconditionally. All process spawning therefore
 # lives in this one helper, which never uses a shell, takes a fixed argument
 # list, and resolves the executable itself; command_runner_test.py holds those
-# properties. No other module may import `subprocess`.
+# properties. No other module may import `subprocess`. The helper's collection
+# annotations also stay imported at runtime because coverage inspects them and
+# CPython 3.12 evaluates annotations while importing the module.
 "tests/workflow_contracts/command_runner.py" = [
     "suspicious-subprocess-import",
     "subprocess-without-shell-equals-true",
+    "TC003",
 ]
 
 [tool.ruff.lint.flake8-import-conventions]
