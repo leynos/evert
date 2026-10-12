@@ -234,6 +234,18 @@ def test_mutation_reusable_suite_requires_build_tool_install() -> None:
     ), violations
 
 
+def test_mutation_job_keeps_precedence_over_external_reusable_route() -> None:
+    """Mutation workflow setup is checked before generic reusable routing."""
+    job = {
+        "uses": "leynos/shared-actions/.github/workflows/mutation-cargo.yml@full-sha",
+        "with": {"setup-commands": "make install-build-tools"},
+    }
+
+    assert not build_tool_violations({"future.yml": {"jobs": {"mutation": job}}}), (
+        "mutation jobs must be classified before generic reusable workflows"
+    )
+
+
 def test_mutation_setup_cannot_hide_install_under_a_condition() -> None:
     """A conditional install does not satisfy the mutation contract."""
     documents = fresh_documents()

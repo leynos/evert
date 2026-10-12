@@ -2,9 +2,7 @@
 
 import dataclasses
 import re
-import tomllib
 import typing as typ
-from pathlib import Path
 
 from workflow_contract_support import calls, continues_on_error, steps
 
@@ -21,7 +19,6 @@ DIRECT_SETUP = re.compile(
     r"\bcargo\s+(?:install|binstall)\b[^\n]*(?:whitaker|dylint)",
     re.IGNORECASE,
 )
-MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
 MAKE_TARGET = re.compile(r"^[A-Za-z0-9_-]+$")
 _PATH_OPTIONS = {"-C", "--directory", "-f", "--file"}
 _DIRECTORY_OPTIONS = {"-C", "--directory"}
@@ -42,15 +39,6 @@ class _MakeGraph:
     uncertain_targets: set[str]
     graph: dict[str, set[str] | None]
     default_target: str
-
-
-def _read_makefile() -> str:
-    """Read the local Makefile with line continuations folded away."""
-    try:
-        return MAKEFILE.read_text(encoding="utf-8").replace("\\\n", " ")
-    except OSError as error:
-        message = f"cannot inspect local Makefile {MAKEFILE}: {error}"
-        raise ValueError(message) from error
 
 
 def _is_skippable(line: str) -> bool:
@@ -115,9 +103,9 @@ def _close_over(graph: dict[str, set[str] | None], seeds: set[str]) -> set[str]:
         closure = grown
 
 
-def _make_lint_targets() -> _MakeGraph | None:
-    """Resolve Make targets whose local prerequisite path includes `lint`."""
-    graph, default_target = _build_graph(_read_makefile())
+def make_lint_targets(source: str) -> _MakeGraph | None:
+    """Resolve local Make targets whose supplied source path includes `lint`."""
+    graph, default_target = _build_graph(source.replace("\\\n", " "))
     if "lint" not in graph or default_target is None:
         return None
     unresolved_roots = {
@@ -171,9 +159,8 @@ def _target_status(selected: str, make_graph: _MakeGraph) -> bool | None:
     return False
 
 
-def make_lint_step_status(run: str) -> bool | None:
-    """Recognize direct lint calls and literal local paths such as `make all`."""
-    make_graph = _make_lint_targets()
+def make_lint_step_status(run: str, make_graph: _MakeGraph | None) -> bool | None:
+    """Classify Make calls against the graph supplied by the test boundary."""
     if make_graph is None:
         return None if re.search(r"\bmake\b", run) else False
     found_lint = False
@@ -219,23 +206,25 @@ def _is_step_list(raw_steps: object) -> bool:
     return isinstance(raw_steps, list) and all(isinstance(s, dict) for s in raw_steps)
 
 
-def _classify_step(step: Step) -> tuple[bool, bool]:
+def _classify_step(step: Step, make_graph: _MakeGraph | None) -> tuple[bool, bool]:
     """Return whether a step is on the lint path and whether that is uncertain."""
     command = step.get("run")
     if command is None:
         return False, False
     if not isinstance(command, str):
         return True, True
-    route = make_lint_step_status(command)
+    route = make_lint_step_status(command, make_graph)
     return route is not False, route is None
 
 
-def workflow_lint_steps(job: dict[str, object]) -> tuple[list[Step], list[int], bool]:
+def workflow_lint_steps(
+    job: dict[str, object], make_graph: _MakeGraph | None
+) -> tuple[list[Step], list[int], bool]:
     """Find direct or literal Makefile paths to lint; mark unknown paths."""
     raw_steps = job.get("steps")
     if not isinstance(raw_steps, list) or not _is_step_list(raw_steps):
         return [], [], True
-    classified = [_classify_step(step) for step in raw_steps]
+    classified = [_classify_step(step, make_graph) for step in raw_steps]
     lint_indices = [index for index, (on_path, _) in enumerate(classified) if on_path]
     return raw_steps, lint_indices, any(uncertain for _, uncertain in classified)
 
@@ -245,11 +234,16 @@ def action_steps(steps_to_check: list[Step]) -> list[Step]:
     return [step for step in steps_to_check if calls(step, ACTION)]
 
 
-def _development_cranelift_default() -> bool | None:
-    """Read Cranelift selection from the generic Linux cfg source."""
-    config_path = Path(__file__).resolve().parents[2] / ".cargo" / "config.toml"
-    config = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    target_config = config.get("target", {}).get('cfg(target_os = "linux")', {})
+def development_cranelift_default(config: object) -> bool | None:
+    """Classify Cranelift from the parsed Cargo configuration supplied by caller."""
+    if not isinstance(config, dict):
+        return None
+    target = config.get("target", {})
+    if not isinstance(target, dict):
+        return None
+    target_config = target.get('cfg(target_os = "linux")', {})
+    if not isinstance(target_config, dict):
+        return None
     rustflags = target_config.get("rustflags")
     if not isinstance(rustflags, list) or not all(
         isinstance(flag, str) for flag in rustflags
@@ -269,24 +263,33 @@ def _boolean_input(value: object) -> bool | None:
             return None
 
 
-def _action_input_violations(where: str, inputs: dict[object, object]) -> list[str]:
+def _action_input_violations(
+    where: str,
+    inputs: dict[object, object],
+    *,
+    expected_cranelift: bool | None,
+) -> list[str]:
     """Reject forbidden action inputs and a Cranelift choice that drifts."""
     violations = [
         f"{where} Whitaker action must not set {forbidden}"
         for forbidden in sorted(FORBIDDEN_INPUTS.intersection(inputs))
     ]
     selected = _boolean_input(inputs.get("cranelift", False))
-    expected = _development_cranelift_default()
-    if expected is None:
+    if expected_cranelift is None:
         violations.append("cannot determine the Linux development Cranelift default")
-    elif selected is not expected:
+    elif selected is not expected_cranelift:
         violations.append(
             "Whitaker action cranelift input must match the Linux development default"
         )
     return violations
 
 
-def _action_step_violations(where: str, action_step: Step) -> list[str]:
+def _action_step_violations(
+    where: str,
+    action_step: Step,
+    *,
+    expected_cranelift: bool | None,
+) -> list[str]:
     """Check one Whitaker action step for pinning, conditions and inputs."""
     violations: list[str] = []
     if action_step.get("uses") != ACTION_USE:
@@ -297,7 +300,11 @@ def _action_step_violations(where: str, action_step: Step) -> list[str]:
         violations.append(f"{where} Whitaker action must not continue on error")
     inputs = action_step.get("with", {})
     if isinstance(inputs, dict):
-        violations.extend(_action_input_violations(where, inputs))
+        violations.extend(
+            _action_input_violations(
+                where, inputs, expected_cranelift=expected_cranelift
+            )
+        )
     else:
         violations.append(f"{where} Whitaker action inputs must be a mapping")
     return violations
@@ -313,37 +320,42 @@ def _lint_step_violations(where: str, lint_step: Step) -> list[str]:
     return violations
 
 
-def lint_job_action_violations(
-    where: str, job_steps: list[Step], lint_indices: list[int], route_name: str
-) -> list[str]:
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class _LintJobContext:
+    """Keep lint route facts together at the private policy boundary."""
+
+    job_steps: list[Step]
+    lint_indices: list[int]
+    route_name: str
+    expected_cranelift: bool | None = None
+    actions: list[Step] = dataclasses.field(default_factory=list)
+
+
+def lint_job_action_violations(where: str, context: _LintJobContext) -> list[str]:
     """Require one unconditional, correctly pinned action before the lint path."""
+    job_steps = context.job_steps
+    lint_indices = context.lint_indices
     violations: list[str] = []
     actions = action_steps(job_steps)
     if len(actions) != 1:
         violations.append(f"{where} requires exactly one shared Whitaker action")
     for action_step in actions:
-        violations.extend(_action_step_violations(where, action_step))
+        violations.extend(
+            _action_step_violations(
+                where, action_step, expected_cranelift=context.expected_cranelift
+            )
+        )
     for index in lint_indices:
         violations.extend(_lint_step_violations(where, job_steps[index]))
     violations.extend(
         _action_order_violations(
-            where,
-            _ActionOrderContext(job_steps, actions, lint_indices, route_name),
+            where, dataclasses.replace(context, actions=actions)
         )
     )
     return violations
 
 
-class _ActionOrderContext(typ.NamedTuple):
-    """Keep the step-order inputs together at their private call boundary."""
-
-    job_steps: list[Step]
-    actions: list[Step]
-    lint_indices: list[int]
-    route_name: str
-
-
-def _action_order_violations(where: str, context: _ActionOrderContext) -> list[str]:
+def _action_order_violations(where: str, context: _LintJobContext) -> list[str]:
     """Require the sole action to precede the first lint-path step.
 
     Returns
@@ -354,11 +366,18 @@ def _action_order_violations(where: str, context: _ActionOrderContext) -> list[s
     Examples
     --------
     >>> _action_order_violations(
-    ...     "ci.yml", _ActionOrderContext([{}, {}], [{}], [0], "make lint")
+    ...     "ci.yml", _LintJobContext(
+    ...         job_steps=[{}, {}],
+    ...         actions=[{}],
+    ...         lint_indices=[0],
+    ...         route_name="make lint",
+    ...     )
     ... )
     ['ci.yml Whitaker action must run before make lint']
     >>> _action_order_violations(
-    ...     "ci.yml", _ActionOrderContext([{}], [], [0], "make lint")
+    ...     "ci.yml", _LintJobContext(
+    ...         job_steps=[{}], lint_indices=[0], route_name="make lint"
+    ...     )
     ... )
     []
     """

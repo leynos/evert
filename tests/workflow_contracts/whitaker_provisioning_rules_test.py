@@ -3,15 +3,16 @@
 import typing as typ
 
 import pytest
-import whitaker_provisioning_rules as rules
 from whitaker_provisioning_rules import (
     ACTION_USE,
     _action_order_violations,
-    _ActionOrderContext,
+    _LintJobContext,
     _make_invocation_arguments,
     _MakeGraph,
+    development_cranelift_default,
     lint_job_action_violations,
     make_lint_step_status,
+    make_lint_targets,
 )
 
 if typ.TYPE_CHECKING:
@@ -57,34 +58,66 @@ def _make_graph() -> _MakeGraph:
 
 
 @pytest.mark.parametrize(
-    ("run", "graph", "expected"),
+    ("run", "graph_present", "expected"),
     [
-        pytest.param("make lint", "present", True, id="direct-lint"),
-        pytest.param("make all", "present", True, id="aggregate-through-graph"),
+        pytest.param("make lint", True, True, id="direct-lint"),
+        pytest.param("make all", True, True, id="aggregate-through-graph"),
         pytest.param(
             "make -f other.mk build; make lint",
-            "present",
+            True,
             None,
             id="unresolved-invocation-carries-forward",
         ),
-        pytest.param("make unknown", "present", None, id="unknown-target"),
-        pytest.param("make", "present", True, id="default-target"),
-        pytest.param("make lint", "missing", None, id="missing-graph-make"),
-        pytest.param("printf 'hello'", "missing", False, id="missing-graph-no-make"),
+        pytest.param("make unknown", True, None, id="unknown-target"),
+        pytest.param("make", True, True, id="default-target"),
+        pytest.param("make lint", False, None, id="missing-graph-make"),
+        pytest.param("printf 'hello'", False, False, id="missing-graph-no-make"),
     ],
 )
 def test_make_lint_step_status_preserves_resolution_rules(
-    monkeypatch: pytest.MonkeyPatch, run: str, graph: str, expected: object
+    run: str, graph_present: object, expected: object
 ) -> None:
     """Direct, graph-resolved, and unknown Make paths retain their statuses."""
-    resolved = _make_graph() if graph == "present" else None
+    graph = _make_graph() if graph_present else None
+    assert make_lint_step_status(run, graph) is expected, run
 
-    def provide_graph() -> _MakeGraph | None:
-        """Return the selected synthetic graph."""
-        return resolved
 
-    monkeypatch.setattr(rules, "_make_lint_targets", provide_graph)
-    assert make_lint_step_status(run) is expected, run
+def test_make_graph_parser_consumes_injected_makefile_source() -> None:
+    """Literal prerequisites are parsed without reading the repository file."""
+    graph = make_lint_targets("lint:\nall: lint\n")
+
+    assert graph is not None, "supplied Makefile text should produce a graph"
+    assert graph.lint_targets == {"lint", "all"}, graph
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        pytest.param(
+            {"target": {'cfg(target_os = "linux")': {"rustflags": []}}},
+            False,
+            id="llvm-default",
+        ),
+        pytest.param(
+            {
+                "target": {
+                    'cfg(target_os = "linux")': {
+                        "rustflags": ["-Zcodegen-backend=cranelift"]
+                    }
+                }
+            },
+            True,
+            id="cranelift-default",
+        ),
+        pytest.param({"target": []}, None, id="unknown-shape"),
+        pytest.param({}, None, id="missing-target"),
+    ],
+)
+def test_cranelift_selection_uses_parsed_configuration(
+    config: object, expected: object
+) -> None:
+    """The pure rule accepts parsed configuration and preserves unknown state."""
+    assert development_cranelift_default(config) is expected, config
 
 
 @pytest.mark.parametrize(
@@ -113,7 +146,12 @@ def test_action_order_violations_require_one_prior_action(
         actions = [job_steps[action_position]]
     violations = _action_order_violations(
         "ci.yml",
-        _ActionOrderContext(job_steps, actions, lint_indices, "make lint"),
+        _LintJobContext(
+            job_steps=job_steps,
+            actions=actions,
+            lint_indices=lint_indices,
+            route_name="make lint",
+        ),
     )
     expected_messages = [f"ci.yml Whitaker action {message}" for message in expected]
     assert violations == expected_messages, violations
@@ -126,7 +164,13 @@ def test_lint_job_violations_keep_cardinality_before_step_and_lint_errors() -> N
     lint_step: Step = {"run": "make lint", "if": False, "continue-on-error": True}
 
     violations = lint_job_action_violations(
-        "ci.yml", [first_action, second_action, lint_step], [2], "make lint"
+        "ci.yml",
+        _LintJobContext(
+            job_steps=[first_action, second_action, lint_step],
+            lint_indices=[2],
+            route_name="make lint",
+            expected_cranelift=False,
+        ),
     )
 
     assert violations == [
@@ -142,7 +186,13 @@ def test_lint_job_violations_keep_action_lint_and_order_diagnostic_order() -> No
     action: Step = {"uses": ACTION_USE, "if": False, "with": {"cranelift": "false"}}
 
     violations = lint_job_action_violations(
-        "ci.yml", [lint_step, action], [0], "make lint"
+        "ci.yml",
+        _LintJobContext(
+            job_steps=[lint_step, action],
+            lint_indices=[0],
+            route_name="make lint",
+            expected_cranelift=False,
+        ),
     )
 
     assert violations == [

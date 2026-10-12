@@ -322,15 +322,23 @@ Cargo-output parsing stays in `cargo_selection_test.py`; only
 `_evert_rustc_command` composes `_cargo_running_tokens` and
 `_evert_rustc_arguments`.
 
-In `whitaker_provisioning_rules.py`, only `make_lint_step_status` calls
-`_make_invocation_arguments`, and only `lint_job_action_violations` calls
-`_action_order_violations`. In `build_tools_rules.py`, only `_job_violations`
-may select mutation, reusable-workflow, or direct-suite handling. It is the
-only caller of `_direct_suite_violations`, which validates all step shapes and
-scans the complete step list before selecting the first suite. This prevents a
-malformed later step from being hidden by an earlier test command.
-`_direct_suite_violations` is the only caller of `step_provisioning_violations`
-in `build_tools_step_provisioning.py`. That module owns setup-rust action
+In `whitaker_provisioning_inputs.py`, `read_provisioning_inputs` is the only
+reader of the Makefile and Cargo configuration for Whitaker contracts. It
+translates read, decoding and TOML parse failures to `WorkflowError` and passes
+the parsed Make graph and Cranelift selection to the policy checks. The rules
+module parses supplied Makefile text and inspects parsed TOML data; its policy
+functions do not read repository files. In `whitaker_provisioning_rules.py`,
+only `make_lint_step_status` calls `_make_invocation_arguments`, and only
+`lint_job_action_violations` calls `_action_order_violations`.
+
+In `build_tools_rules.py`, `_job_violations` checks mutation jobs first, then
+delegates non-mutation routing to `_non_mutation_job_violations`. That helper
+checks reusable workflows before direct-suite handling and is the only caller of
+`_direct_suite_violations`, which validates all step shapes and scans the
+complete list before selecting the first suite. This prevents a malformed later
+step from being hidden by an earlier test command. `_direct_suite_violations`
+is the only caller of `step_provisioning_violations` in
+`build_tools_step_provisioning.py`. That module owns setup-rust action
 validation, Make-installer validation, and their diagnostic ordering.
 `_CandidatePolicy` pairs candidate discovery, the valid-predecessor check, and
 diagnostics; the single `step_provisioning_violations` entry point applies

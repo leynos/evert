@@ -64,9 +64,16 @@ def build_tool_violations(documents: dict[str, Document]) -> list[str]:
 def _job_violations(
     where: str, job: dict[str, object], documents: dict[str, Document]
 ) -> JobRouteResult:
-    """Apply mutation, reusable-workflow and direct-suite rules in order."""
+    """Keep mutation jobs ahead of ordinary reusable and direct suite routes."""
     if _is_mutation_job(job):
         return True, _mutation_violations(where, job)
+    return _non_mutation_job_violations(where, job, documents)
+
+
+def _non_mutation_job_violations(
+    where: str, job: dict[str, object], documents: dict[str, Document]
+) -> JobRouteResult:
+    """Check reusable-workflow routing before inspecting ordinary job steps."""
     reusable_problem = _unresolved_reusable_problem(job, documents)
     if reusable_problem is not None:
         return False, [f"{where} {reusable_problem}"]
