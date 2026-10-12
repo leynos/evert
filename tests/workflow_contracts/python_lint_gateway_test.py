@@ -174,6 +174,16 @@ def test_cv005_contracts_use_the_repository_python_baseline() -> None:
     )
 
 
+def test_coverage_interpreter_matches_the_python_baseline() -> None:
+    """Coverage must use the same runtime as repository modules and tools."""
+    config = tomllib.loads(
+        (REPOSITORY_ROOT / ".github" / "cv005.toml").read_text(encoding="utf-8")
+    )
+    assert config["selection"].get("python-version") == _makefile_variable(
+        "PYTHON_BASELINE"
+    ), "coverage must explicitly select the managed Python baseline"
+
+
 def test_coverage_sync_installs_the_workflow_yaml_dependency() -> None:
     """The coverage action's default uv sync must install PyYAML."""
     dev_dependencies = _pyproject_setting("dependency-groups", "dev")

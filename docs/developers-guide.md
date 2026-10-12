@@ -125,7 +125,7 @@ in `pyproject.toml`:
   3.12 evaluates them when importing the module. The helper accepts
   `collections.abc.Sequence[str]` for `command`, `str | os.PathLike[str]` for
   `cwd`, and an optional `collections.abc.Mapping[str, str]` for `environment`.
-  Its regression test checks both runtime collection annotations.
+  Its regression test checks the command, environment, and cwd annotations.
   `build_tools_script_support.py` owns fixtures only for installer, preflight,
   and Clang-wrapper contracts. It runs those scripts through
   `command_runner.py`; it is not a general shell-test framework.
@@ -269,6 +269,15 @@ written by `coverage-main.yml`. The local `make coverage` target remains LCOV
 and writes `lcov.info`. The pull-request lane publishes no coverage artefact,
 never contacts CodeScene, and never receives `CS_ACCESS_TOKEN`, so a change in
 CodeScene's application programming interface (API) cannot hold a pull request.
+
+Both coverage action calls explicitly select CPython 3.14 through their
+`python-version` input, matching `PYTHON_BASELINE` and the repository's
+annotation semantics. The selection in `.github/cv005.toml` holds both lanes to
+that interpreter; the Python gateway contract checks it against the Makefile.
+Without this input, a publisher runner can select its system Python 3.12, which
+evaluates annotations containing type-only imports during collection. The
+shared action keys Python ratchet baselines by interpreter version, so this
+selection also keeps baseline measurements on the same runtime.
 
 `coverage-main.yml` is the only publisher. On each push to `main` it refreshes
 the ratchet baseline and uploads the report to CodeScene. It also runs on
