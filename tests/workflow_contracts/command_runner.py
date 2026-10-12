@@ -12,14 +12,11 @@ never uses a shell, and it resolves the executable to an absolute path before
 running it. Callers must pass literal commands, never workflow or user input.
 """
 
+import collections.abc as cabc
 import os
 import shutil
 import subprocess
 import typing as typ
-
-if typ.TYPE_CHECKING:
-    import collections.abc as cabc
-    from pathlib import Path
 
 
 class CommandResult(typ.NamedTuple):
@@ -33,7 +30,7 @@ class CommandResult(typ.NamedTuple):
 def run_fixed_command(
     command: cabc.Sequence[str],
     *,
-    cwd: Path,
+    cwd: str | os.PathLike[str],
     environment: cabc.Mapping[str, str] | None = None,
 ) -> CommandResult:
     """Run a literal command without a shell and capture its output.
