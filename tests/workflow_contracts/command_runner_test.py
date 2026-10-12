@@ -6,6 +6,7 @@ tests fail if a change gives up any of those properties.
 """
 
 import collections.abc as cabc
+import os
 import stat
 import sys
 from pathlib import Path
@@ -36,6 +37,9 @@ def test_runtime_annotations_resolve() -> None:
     )
     assert annotations["environment"] == cabc.Mapping[str, str] | None, (
         f"unexpected environment annotation: {annotations!r}"
+    )
+    assert annotations["cwd"] == str | os.PathLike[str], (
+        f"unexpected cwd annotation: {annotations!r}"
     )
 
 
