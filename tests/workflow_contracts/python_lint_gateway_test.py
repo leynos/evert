@@ -270,8 +270,16 @@ def test_pylint_keeps_defaults_and_adds_df12_messages() -> None:
     assert "disable" not in pylint_config, (
         "Pylint defaults must remain active; do not configure a disable list"
     )
+    disable_all = re.search(
+        r"(?:--disable(?:=|\s+)all\b|-d(?:=|\s+)all\b)",
+        recipe,
+        re.IGNORECASE,
+    )
+    assert disable_all is None, (
+        "Pylint defaults must remain active; do not disable all messages"
+    )
     pylint_command = re.search(
-        r"(?!.*--disable=all).*pylint.*--load-plugins=df12_python_lints"
+        r"pylint.*--load-plugins=df12_python_lints"
         r".*--enable=\$\(DF12_PYLINT_MESSAGES\)",
         recipe,
         re.DOTALL,

@@ -194,6 +194,16 @@ def test_mutation_requires_a_mapping_and_string_setup_command(
             [INSTALL_ORDER_DIAGNOSTIC],
             id="until-block",
         ),
+        pytest.param(
+            f"for x in $NONE; do\n{INSTALL_COMMAND}\ndone",
+            [INSTALL_ORDER_DIAGNOSTIC],
+            id="for-block",
+        ),
+        pytest.param(
+            f"select x in empty; do\n{INSTALL_COMMAND}\ndone",
+            [INSTALL_ORDER_DIAGNOSTIC],
+            id="select-block",
+        ),
     ],
 )
 def test_mutation_install_validation_preserves_exact_line_rules(

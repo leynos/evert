@@ -211,7 +211,7 @@ def _install_is_conditional(lines: list[str], install_index: int) -> bool:
         words = line.split()
         first = words[0].casefold() if words else ""
         match first:
-            case "if" | "case" | "while" | "until":
+            case "if" | "case" | "while" | "until" | "for" | "select":
                 conditional_depth += 1
             case "fi" | "esac" | "done":
                 conditional_depth = max(0, conditional_depth - 1)

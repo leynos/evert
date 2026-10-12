@@ -158,7 +158,7 @@ def _read_workflow(path: Path) -> Document:
 
     Examples
     --------
-    >>> workflow = _read_workflow(Path("ci.yml"))
+    >>> workflow = _read_workflow(WORKFLOW_DIRECTORY / "ci.yml")
     >>> isinstance(workflow, dict)
     True
     """

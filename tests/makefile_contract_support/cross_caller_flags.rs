@@ -50,6 +50,26 @@ fn make_cross_route(
         .output()
 }
 
+/// Runs the native Darwin route with inherited Rust flags.
+fn make_darwin_route(inherited_flags: &str) -> std::io::Result<Output> {
+    let mut command = Command::new("make");
+    command.args([
+        "--always-make",
+        "--old-file=check-build-tools",
+        "--no-print-directory",
+        "--silent",
+        "typecheck-rust",
+        "BUILD_HOST_OS=Darwin",
+        "BUILD_HOST_ARCH=x86_64",
+    ]);
+    command
+        .arg(format!("CARGO={}", PRINT_FLAGS_CARGO.replace('$', "$$")))
+        .env("RUSTFLAGS", inherited_flags)
+        .env("CARGO_ENCODED_RUSTFLAGS", "encoded-caller-flags")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+}
+
 /// Returns the evaluated Cargo route from a dry-run transcript.
 fn evaluated_probe_route(output: &Output) -> Option<String> {
     String::from_utf8_lossy(&output.stdout)
@@ -141,6 +161,23 @@ fn cross_route_preserves_benign_flags_from_both_callers() {
         stdout.trim(),
         "observed=-D warnings -C debuginfo=1 -C opt-level=1",
         "the cross route must preserve inherited and Make flags exactly"
+    );
+}
+
+/// Confirms unsupported hosts inherit caller flags without cross-route checks.
+#[test]
+fn darwin_route_preserves_inherited_development_flags() {
+    let output = make_darwin_route("-Zthreads=8").expect("controlled Darwin Make route must run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Darwin must preserve caller flags without rejecting them: {stdout}{stderr}"
+    );
+    assert_eq!(stdout.trim(), "observed=-Zthreads=8 -D warnings");
+    assert!(
+        !stderr.contains("explicit non-native Cargo route"),
+        "Darwin must not report a cross-target rejection: {stderr}"
     );
 }
 

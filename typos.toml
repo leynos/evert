@@ -69,7 +69,7 @@ extend-ignore-re = [
     "mold \\{reported_version\\}",
     "mold-[0-9]+\\.[0-9]+\\.[0-9]+-(?:x86_64|aarch64)-linux\\.tar\\.gz",
     "mold-\\$version-(?:\\$\\(linker_arch\\)|\\$arch)-linux\\.tar\\.gz",
-    "mold-\\{version\\}-x86_64-linux\\.tar\\.gz",
+    "mold-\\{version\\}-\\{host_architecture\\}-linux\\.tar\\.gz",
     "mold-version:",
     "tool_cache / \"mold\" /",
     "upload-artifact",

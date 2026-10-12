@@ -51,11 +51,15 @@ on.
 
 ## Python lint gateway
 
-`make lint` runs the Rust gates first and the Python gates after them, with
-warnings denied. `make lint-python` runs the Python gates on their own, and
-`make all` includes `make typecheck`. The same discovered Python file inventory
-feeds Ruff, Pylint with the df12 plugin, ambrleaks, Interrogate, and ty; the
-typecheck gateway runs ty over that inventory. In order, the lint gateway runs:
+`make lint` runs Interrogate first as a prerequisite, then the Rust lint
+targets, then the remaining Python gates, with warnings denied. Interrogate
+uses its own `INTERROGATE_TARGETS` directory list, which workflow-contract
+tests check against tracked Python files. `make lint-python` runs Interrogate
+and the other Python gates on their own, and `make all` includes
+`make typecheck`. The same discovered Python file inventory feeds Ruff, Pylint
+with the df12 plugin, ambrleaks, and ty; the typecheck gateway runs ty over
+that inventory. After Interrogate and the Rust lint targets, the Python tools
+run in this order:
 
 - Ruff (`ruff check`), pinned by `RUFF_VERSION` (0.16.4).
 - Pylint 4.0.9 and the df12 house lints in one Pylint invocation on a managed
@@ -68,8 +72,10 @@ typecheck gateway runs ty over that inventory. In order, the lint gateway runs:
   pinned v0.3.0 plugin release; the workflow contract test keeps that list
   complete when the pinned release changes.
 - `ambrleaks`, from the same df12 package and ref.
-- Interrogate, pinned by `INTERROGATE_VERSION` (1.7.0), with `--fail-under 100`.
-  Every module, class, function, nested function, and test needs a docstring.
+
+Interrogate is pinned by `INTERROGATE_VERSION` (1.7.0) and runs with
+`--fail-under 100`. Every module, class, function, nested function, and test
+needs a docstring.
 
 Rule sets differ between releases, so each tool is pinned exactly. To bump one,
 change its Makefile variable and fix the new findings in the same commit.
@@ -431,12 +437,11 @@ domain values instead of source text.
 
 ### Backend support
 
-Cranelift is excluded from the development defaults. The pinned
-`nightly-2026-10-11` toolchain includes its preview compiler component, but
-Cargo does not select that backend by default. With Cranelift selected, the
-`catch_unwind` contract fails and a panicking joined thread aborts with
-`failed to initiate panic, error 5`. Both probes pass on LLVM, so the standard
-retains LLVM until Cranelift supports these panic paths. The
+Cranelift is excluded from the development defaults and pinned toolchain
+components. With Cranelift selected, the `catch_unwind` contract fails and a
+panicking joined thread aborts with `failed to initiate panic, error 5`. Both
+probes pass on LLVM, so the standard retains LLVM until Cranelift supports
+these panic paths. The
 [follow-up issue #80](https://github.com/leynos/evert/issues/80) schedules a
 review for 1 April 2027; the tests must remain intact when support is
 reassessed.

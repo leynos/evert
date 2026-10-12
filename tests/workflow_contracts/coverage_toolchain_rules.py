@@ -76,11 +76,8 @@ def _setup_step_problems(name: str, setup: Step) -> list[str]:
 
     Examples
     --------
-    >>> _setup_step_problems("ci.yml", {"uses": "setup-rust@main"})
-    [
-    ...     'ci.yml setup-rust must use a full-SHA pin',
-    ...     'ci.yml setup-rust must install pinned linker',
-    ... ]
+    >>> _setup_step_problems("x", {"uses": "setup-rust@main"})
+    ['x setup-rust must use a full-SHA pin', 'x setup-rust must install pinned linker']
     """
     problems = []
     if "if" in setup or continues_on_error(setup):

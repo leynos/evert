@@ -1,11 +1,14 @@
 """Exercise setup-rust's linker cache through the real Make installer route."""
 
 import os
+import platform
 import re
 import shutil
 import sys
+import tomllib
 from pathlib import Path
 
+import pytest
 from command_runner import CommandResult, run_fixed_command
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -13,7 +16,17 @@ SHA256_HEX_DIGITS = 64
 DIGEST_AND_NAME_FIELDS = 2
 EXECUTABLE_MODE = 0o755
 DEFAULT_PATH = "/usr/bin:/bin"
-PINNED_NIGHTLY = "nightly-2026-10-11"
+TOOLCHAIN = tomllib.loads(
+    (REPOSITORY / "rust-toolchain.toml").read_text(encoding="utf-8")
+)["toolchain"]
+PINNED_NIGHTLY = TOOLCHAIN["channel"]
+HOST_ARCHITECTURE = {
+    "amd64": "x86_64",
+    "arm64": "aarch64",
+    "aarch64": "aarch64",
+    "x86_64": "x86_64",
+}.get(platform.machine().casefold())
+SUPPORTED_LINUX_HOST = sys.platform == "linux" and HOST_ARCHITECTURE is not None
 PROBE_ARGUMENTS = [
     "BUILD_HOST_OS=Darwin",
     "BUILD_HOST_ARCH=x86_64",
@@ -26,6 +39,12 @@ LINKER_MISSING_MESSAGE = (
 PYTHON_SHEBANG = f"#!{sys.executable}\n"
 
 
+def _host_architecture() -> str:
+    """Return the supported Linux archive architecture for the current host."""
+    assert HOST_ARCHITECTURE is not None, "host must support the pinned linker"
+    return HOST_ARCHITECTURE
+
+
 def _run(
     arguments: list[str], environment: dict[str, str] | None = None
 ) -> CommandResult:
@@ -35,8 +54,9 @@ def _run(
 
 def _linker_version_and_digest() -> tuple[str, str]:
     """Read the pinned `mold` version and archive checksum from the repository."""
+    host_architecture = _host_architecture()
     version = (REPOSITORY / "tools/mold/VERSION").read_text(encoding="utf-8").strip()
-    archive = f"mold-{version}-x86_64-linux.tar.gz"
+    archive = f"mold-{version}-{host_architecture}-linux.tar.gz"
     checksums = (REPOSITORY / "tools/mold/SHA256SUMS").read_text(encoding="utf-8")
     digest = next(
         fields[0]
@@ -74,13 +94,14 @@ def _install_fake_commands(tmp_path: Path) -> tuple[Path, Path, Path]:
     fake_bin.mkdir()
     rustup_log = tmp_path / "rustup.log"
     curl_log = tmp_path / "curl.log"
+    host_architecture = _host_architecture()
     _write_executable(
         fake_bin / "rustup",
         PYTHON_SHEBANG + "import pathlib, sys\n"
         f"log = pathlib.Path({str(rustup_log)!r})\n"
         "log.open('a').write(' '.join(sys.argv[1:]) + '\\n')\n"
         f"if sys.argv[1:3] == ['run', {PINNED_NIGHTLY!r}]:\n"
-        "    print('host: x86_64-unknown-linux-gnu')\n"
+        f"    print('host: {host_architecture}-unknown-linux-gnu')\n"
         "elif sys.argv[1:3] == ['toolchain', 'install']:\n"
         "    pass\n"
         "else:\n"
@@ -100,8 +121,9 @@ def _cache_environment(
 ) -> tuple[dict[str, str], Path, Path, str]:
     """Create setup-rust's checksum-shaped cache and isolated command fakes."""
     version, digest = _linker_version_and_digest()
+    host_architecture = _host_architecture()
     tool_cache = tmp_path / "runner-tool-cache"
-    prefix = tool_cache / "mold" / f"{version}-{digest}" / "x86_64"
+    prefix = tool_cache / "mold" / f"{version}-{digest}" / host_architecture
     _install_fake_linker(prefix, reported_version, marker=marker)
     fake_bin, curl_log, _ = _install_fake_commands(tmp_path)
 
@@ -123,6 +145,7 @@ def _run_make_install(environment: dict[str, str]) -> CommandResult:
     return _run(["make", "--no-print-directory", "install-build-tools"], environment)
 
 
+@pytest.mark.skipif(not SUPPORTED_LINUX_HOST, reason="requires a supported Linux host")
 def test_make_installer_reuses_verified_setup_rust_cache(tmp_path: Path) -> None:
     """A verified setup-rust cache is reused without downloading the linker."""
     environment, prefix, curl_log, version = _cache_environment(tmp_path)
@@ -143,6 +166,7 @@ def test_make_installer_reuses_verified_setup_rust_cache(tmp_path: Path) -> None
     assert f"toolchain install {PINNED_NIGHTLY}" in rustup_log, rustup_log
 
 
+@pytest.mark.skipif(not SUPPORTED_LINUX_HOST, reason="requires a supported Linux host")
 def test_make_installer_rejects_cache_without_completion_marker(
     tmp_path: Path,
 ) -> None:
@@ -156,6 +180,7 @@ def test_make_installer_rejects_cache_without_completion_marker(
     assert not curl_log.exists(), "an invalid setup-rust cache must fail closed"
 
 
+@pytest.mark.skipif(not SUPPORTED_LINUX_HOST, reason="requires a supported Linux host")
 def test_make_installer_rejects_cache_with_wrong_linker_version(
     tmp_path: Path,
 ) -> None:
@@ -169,6 +194,7 @@ def test_make_installer_rejects_cache_with_wrong_linker_version(
     assert not curl_log.exists(), "a cache with a wrong linker version must fail closed"
 
 
+@pytest.mark.skipif(not SUPPORTED_LINUX_HOST, reason="requires a supported Linux host")
 def test_make_requires_setup_rust_linker_on_path(tmp_path: Path) -> None:
     """Make refuses to proceed when setup-rust's linker is not on PATH."""
     fake_bin = tmp_path / "fake-bin"
@@ -236,9 +262,6 @@ def test_make_parses_darwin_ci_without_linker_on_path(tmp_path: Path) -> None:
 
 def test_make_fmt_uses_repository_pinned_rustfmt() -> None:
     """`make fmt` formats with the repository's pinned nightly toolchain."""
-    toolchain = (REPOSITORY / "rust-toolchain.toml").read_text(encoding="utf-8")
-    assert f'channel = "{PINNED_NIGHTLY}"' in toolchain, toolchain
-
     result = _run([
         "make",
         "--no-print-directory",

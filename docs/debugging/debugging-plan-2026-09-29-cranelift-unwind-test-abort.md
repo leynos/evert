@@ -1,4 +1,4 @@
-# Debugging Plan: Cranelift Unwind Test Abort
+# Debugging plan: Cranelift unwind test abort
 
 **Generated**: 2026-09-29 **Issue ID**: PR #64, build-standard batch
 **Severity**: Blocking for the requested Cranelift development default
@@ -7,7 +7,7 @@ candidate was prepared by the supervisory agent. The revised candidate was
 supplied by the measurement agent. Falsification was executed by the named
 `alchemist` sub-agent.
 
-## Problem Statement
+## Problem statement
 
 On the integrated Evert branch at base commit
 `49ca82df6d534f8117d6b9d510f4c623762f4214`, focused panic tests fail with the
@@ -18,7 +18,7 @@ panicking spawned thread aborts with `failed to initiate panic, error 5`;
 the explicit LLVM/default linker route. The requested development default
 therefore lacks required panic-unwind evidence.
 
-## Context Summary
+## Context summary
 
 | Aspect              | Details                                                   |
 | ------------------- | --------------------------------------------------------- |
@@ -27,7 +27,7 @@ therefore lacks required panic-unwind evidence.
 | Affected components | Rust test binary, Cranelift backend, panic runtime        |
 | Recent changes      | Cranelift is selected for Linux x86_64 development        |
 
-### Error Artefacts
+### Error artefacts
 
 ```text
 thread 'catch_unwind_observes_an_intentional_panic' panicked at
@@ -46,7 +46,7 @@ The source logs are under `/tmp/evert-pr64-build-batch/panic-probe-49ca-run1/`:
 Their exit codes were 101, 101, and 0 for the Cranelift cases, and 0 for all
 three LLVM cases.
 
-### Information Gaps
+### Information gaps
 
 - The differential probe covers the pinned compiler on x86_64 GNU/Linux only.
 - The upstream README currently says panic unwinding is not supported and
@@ -56,7 +56,7 @@ three LLVM cases.
   cases fail on Evert's selected host route; a full Cranelift suite is not a
   valid passing route while those cases remain in the workspace.
 
-### Primary-Source Context
+### Primary-source context
 
 The official
 [Cranelift backend README](https://github.com/rust-lang/rustc_codegen_cranelift)
@@ -72,7 +72,7 @@ ______________________________________________________________________
 
 ## Hypotheses
 
-### H1: Forced Unwind Tables Restore Cranelift Test Unwinding
+### H1: Forced unwind tables restore Cranelift test unwinding
 
 **Claim**: On `nightly-2026-05-28` for x86_64 GNU/Linux, the two failures occur
 because the current Cranelift test binaries lack unwind tables unless rustc is
@@ -88,7 +88,7 @@ option must still be measured on the exact toolchain.
 and the four current Cranelift/frontend/linker flags remain present in the
 compiler invocation.
 
-#### H1 Falsification Plan
+#### H1 falsification plan
 
 Run from the integration worktree at the recorded base, after the shared Cargo
 gate slot is clear. Do not edit source or Cargo configuration. Preserve all
@@ -140,7 +140,7 @@ but catch_unwind still failed and thread join still aborted. Logs are under
 
 ______________________________________________________________________
 
-### H2: Explicit Unwind Strategy Enables the Pinned Cranelift Route
+### H2: Explicit unwind strategy enables the pinned Cranelift route
 
 **Claim**: The pinned Cranelift component selects abort semantics when the
 panic strategy is implicit. Explicitly adding `-Cpanic=unwind` to Evert's test
@@ -155,7 +155,7 @@ the installed component predates the current README.
 **Prediction**: If H2 holds, both failing tests exit 0 and the effective rustc
 invocation contains all four existing defaults plus `-Cpanic=unwind`.
 
-#### H2 Falsification Plan
+#### H2 falsification plan
 
 Run only after the shared Cargo gate slot is clear. Do not edit source or
 configuration. Clear `CARGO_ENCODED_RUSTFLAGS` because it takes precedence, and
@@ -213,7 +213,7 @@ SIGABRT). Logs are in
 
 ______________________________________________________________________
 
-## Findings and Next Decision
+## Findings and next decision
 
 Both tested candidates are falsified on the pinned toolchain and target. The
 current official backend README also says unwinding is unsupported, and the
@@ -224,7 +224,7 @@ Cranelift route. The next action is a recorded baseline decision from the
 authorized maintainer or upstream backend support; no exception is approved by
 this investigation.
 
-## Termination Criteria
+## Termination criteria
 
 The investigation is complete. The Cranelift development-default requirement
 remains blocked for x86_64 GNU/Linux until the backend supports unwinding on
@@ -232,7 +232,7 @@ the selected pinned toolchain or an authorized, precisely scoped baseline
 resolution is recorded. Do not weaken the panic probes, route only those tests
 through LLVM, or claim the full Cranelift suite passes.
 
-## Notes for Executing Agent
+## Notes for executing agent
 
 The integration owner is working in
 `/home/leynos/.lody/repos/github---leynos---evert/worktrees/pr64-integration` on

@@ -100,6 +100,7 @@ fn run_make_with_failing_whitaker(target: &str, parallel: bool) -> std::io::Resu
             "--no-print-directory",
             target,
             "CARGO=true",
+            "INTERROGATE=true",
             "WHITAKER=false",
         ])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
