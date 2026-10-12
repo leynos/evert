@@ -1,3 +1,5 @@
-[target.x86_64-unknown-linux-gnu]
-linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+# Repository-wide Cargo defaults for Linux development builds. The generic
+# target selector keeps the standard independent of Linux architecture; the
+# Makefile restates the same flags when a recipe assigns RUSTFLAGS.
+[target.'cfg(target_os = "linux")']
+rustflags = ["-Zthreads=8", "-Clinker=evert-clang-mold", "-Clink-arg=-fuse-ld=mold"]

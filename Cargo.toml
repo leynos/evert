@@ -32,6 +32,7 @@ disallowed_methods                  = "deny"
 needless_pass_by_value              = "deny"
 implicit_hasher                     = "deny"
 missing_assert_message              = "deny"
+missing_docs_in_private_items       = "deny"
 
 # 2. debugging leftovers
 dbg_macro                           = "deny"
@@ -102,4 +103,5 @@ unescaped_backticks                 = "deny"
 [dev-dependencies]
 camino = "1.2.5"
 cap-std = { version = "4.0.2", features = ["fs_utf8"] }
+proptest = "1.11.0"
 rstest = "0.27.0"

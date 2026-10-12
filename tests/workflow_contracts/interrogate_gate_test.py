@@ -11,16 +11,13 @@ guard that stops failing breaks a test rather than silently restoring the gap.
 Run via ``make test-workflow-contracts``.
 """
 
-from __future__ import annotations
-
 import re
-import shutil
-import subprocess
 import textwrap
 from pathlib import Path
 
 import pytest
 import yaml
+from command_runner import CommandResult, run_fixed_command
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
@@ -34,10 +31,14 @@ def _makefile_text() -> str:
 
 def _variable(name: str) -> str:
     """Return the value a `NAME ?=` or `NAME =` assignment gives, joined."""
-    pattern = re.compile(rf"^{name}\s*\??=\s*((?:.*\\\n)*.*)$", re.MULTILINE)
+    continuation = re.escape(chr(92) + "\n")
+    pattern = re.compile(
+        rf"^{name}\s*\??=\s*((?:.*{continuation})*.*)$",
+        re.MULTILINE,
+    )
     match = pattern.search(_makefile_text())
     assert match, f"the Makefile must assign {name}"
-    return re.sub(r"\\\n\s*", " ", match.group(1)).strip()
+    return re.sub(rf"{continuation}\s*", " ", match.group(1)).strip()
 
 
 def _prerequisites(target: str) -> list[str]:
@@ -53,13 +54,16 @@ def _tracked(*patterns: str) -> list[str]:
 
     Git is the authority on what the repository owns: a walk would also see
     the virtual environments CI creates beside the sources.
+
+    Returns
+    -------
+    list[str]
+        Repository-relative paths of tracked files matching *patterns*.
     """
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell
-        ["git", "-C", str(ROOT), "ls-files", *patterns],  # noqa: S607 - git from PATH
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
+    result = run_fixed_command(["git", "ls-files", *patterns], cwd=ROOT)
+    if result.returncode:
+        pytest.fail(f"git ls-files failed: {result.stderr}", pytrace=False)
+    return result.stdout.split()
 
 
 def _python_directories() -> set[Path]:
@@ -69,15 +73,17 @@ def _python_directories() -> set[Path]:
 
 def test_lint_depends_on_interrogate() -> None:
     """Dropping the prerequisite would remove the gate from `make lint`."""
-    assert "interrogate" in _prerequisites("lint")
+    assert "interrogate" in _prerequisites("lint"), "make lint must run interrogate"
 
 
 def test_the_tool_is_pinned_and_run_through_uv() -> None:
     """An unpinned tool could change the verdict with no repository change."""
-    assert _variable("INTERROGATE_VERSION") == "1.7.0"
+    assert _variable("INTERROGATE_VERSION") == "1.7.0", "Interrogate must stay pinned"
     command = _variable("INTERROGATE")
-    assert "tool run" in command
-    assert "--from 'interrogate==$(INTERROGATE_VERSION)'" in command
+    assert "tool run" in command, "Interrogate must run through uv"
+    assert "--from 'interrogate==$(INTERROGATE_VERSION)'" in command, (
+        "uv must install the pinned Interrogate version"
+    )
 
 
 def test_the_flags_demand_a_full_exact_report() -> None:
@@ -91,7 +97,9 @@ def test_the_flags_demand_a_full_exact_report() -> None:
     expected = ["-vv", "--fail-under", "100"]
     if _tracked("*.pyi"):
         expected = ["-vv", "--ext", "pyi", "--fail-under", "100"]
-    assert flags == expected, f"INTERROGATE_FLAGS must be exactly {expected}, not {flags}"
+    assert flags == expected, (
+        f"INTERROGATE_FLAGS must be exactly {expected}, not {flags}"
+    )
 
 
 def test_every_python_directory_is_a_target() -> None:
@@ -111,7 +119,11 @@ def test_ci_installs_uv_before_it_runs_make_lint() -> None:
     checked = 0
     for name, job in workflow["jobs"].items():
         steps = job.get("steps", [])
-        lint = [i for i, s in enumerate(steps) if str(s.get("run", "")).strip() == "make lint"]
+        lint = [
+            index
+            for index, step in enumerate(steps)
+            if str(step.get("run", "")).strip() == "make lint"
+        ]
         if not lint:
             continue
         uv = [i for i, s in enumerate(steps) if "setup-uv" in str(s.get("uses", ""))]
@@ -121,7 +133,7 @@ def test_ci_installs_uv_before_it_runs_make_lint() -> None:
     assert checked, "no CI job runs `make lint`"
 
 
-def _run_target(tmp_path: Path, script: str) -> subprocess.CompletedProcess[str]:
+def _run_target(tmp_path: Path, script: str) -> CommandResult:
     """Run `make interrogate` with the tool replaced by a stub script."""
     stub = tmp_path / "stub.sh"
     stub.write_text(
@@ -130,13 +142,9 @@ def _run_target(tmp_path: Path, script: str) -> subprocess.CompletedProcess[str]
         encoding="utf-8",
     )
     stub.chmod(0o755)
-    make = shutil.which("make")
-    assert make
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell
-        [make, "-C", str(ROOT), "interrogate", f"INTERROGATE={stub}"],
-        capture_output=True,
-        text=True,
-        check=False,
+    return run_fixed_command(
+        ["make", "-C", str(ROOT), "interrogate", f"INTERROGATE={stub}"],
+        cwd=ROOT,
     )
 
 
@@ -144,21 +152,23 @@ def test_the_target_passes_when_the_tool_reports_no_gap(tmp_path: Path) -> None:
     """A clean report and a zero status pass."""
     result = _run_target(tmp_path, "echo '| f.py | COVERED |'\nexit 0\n")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "| f.py | COVERED |" in result.stdout
+    assert "| f.py | COVERED |" in result.stdout, "the report should be printed"
 
 
 def test_the_target_passes_the_configured_flags_and_targets(tmp_path: Path) -> None:
     """The tool receives exactly the configured flags, then the targets."""
     _run_target(tmp_path, "exit 0\n")
     received = (tmp_path / "args.txt").read_text(encoding="utf-8").split()
-    expected = _variable("INTERROGATE_FLAGS").split() + _variable("INTERROGATE_TARGETS").split()
-    assert received == expected
+    expected = _variable("INTERROGATE_FLAGS").split() + _variable(
+        "INTERROGATE_TARGETS"
+    ).split()
+    assert received == expected, "configured flags and targets must reach Interrogate"
 
 
 def test_the_target_fails_when_the_tool_fails(tmp_path: Path) -> None:
     """The tool's own non-zero status is kept."""
     result = _run_target(tmp_path, "echo 'FAILED'\nexit 1\n")
-    assert result.returncode != 0
+    assert result.returncode != 0, "a failing Interrogate command must fail the target"
 
 
 def test_the_target_fails_on_a_missed_row_the_percentage_hid(tmp_path: Path) -> None:
@@ -166,5 +176,9 @@ def test_the_target_fails_on_a_missed_row_the_percentage_hid(tmp_path: Path) -> 
     result = _run_target(
         tmp_path, "echo '| f.main (L3) |  MISSED |'\necho 'RESULT: PASSED'\nexit 0\n"
     )
-    assert result.returncode != 0
-    assert "undocumented definitions remain" in result.stderr
+    assert result.returncode != 0, (
+        "a MISSED row must fail even when the tool exits zero"
+    )
+    assert "undocumented definitions remain" in result.stderr, (
+        "the failure should explain that undocumented definitions remain"
+    )
