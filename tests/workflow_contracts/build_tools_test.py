@@ -2,10 +2,10 @@
 
 import pytest
 from build_tools_rules import (
-    LINKER_VERSION,
     build_tool_violations,
     read_build_tool_workflows,
 )
+from build_tools_step_provisioning import LINKER_VERSION
 from workflow_contract_support import (
     Document,
     WorkflowError,
@@ -176,6 +176,23 @@ def test_unknown_runner_for_a_suite_fails_closed() -> None:
         "cannot be determined" in violation
         for violation in violations
     ), violations
+
+
+def test_direct_suite_validates_steps_after_the_first_suite() -> None:
+    """Malformed later steps still fail before the direct suite is accepted."""
+    documents: dict[str, Document] = {
+        "future.yml": {
+            "jobs": {
+                "test": {
+                    "runs-on": "ubuntu-latest",
+                    "steps": [{"run": "cargo test"}, "not a step mapping"],
+                }
+            }
+        }
+    }
+
+    with pytest.raises(WorkflowError, match="every workflow step must be a mapping"):
+        build_tool_violations(documents)
 
 
 def test_new_local_reusable_suite_call_fails_closed() -> None:

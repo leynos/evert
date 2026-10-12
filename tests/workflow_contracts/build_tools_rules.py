@@ -1,24 +1,19 @@
-"""Require pinned linker provisioning before Linux test-suite workflow paths.
-
-The supported native x86_64 and aarch64 GNU/Linux routes use the pinned
-linker. This consumer checks direct Make/Cargo suites, coverage actions, and
-the shared mutation workflow; scanning all workflows discovers new suites.
-"""
+"""Check Linux Make/Cargo, coverage, and mutation suites for pinned linker setup."""
 
 import re
 import typing as typ
 from pathlib import Path, PurePosixPath
 
 from build_tools_runner import linux_runner_status
+from build_tools_step_provisioning import (
+    _continues_on_error,
+    step_provisioning_violations,
+)
 from workflow_contract_support import Document, WorkflowError, jobs, read_workflows
 
 WORKFLOW_DIRECTORY: typ.Final[Path] = (
     Path(__file__).resolve().parents[2] / ".github" / "workflows"
 )
-SETUP_RUST: typ.Final[str] = "leynos/shared-actions/.github/actions/setup-rust"
-_SETUP_RUST_REF_PARTS = ("2ddf19b3fd", "52c0f1089d", "b0d57b015f", "859b80ab67")
-SETUP_RUST_REF: typ.Final[str] = f"{SETUP_RUST}@{''.join(_SETUP_RUST_REF_PARTS)}"
-LINKER_VERSION: typ.Final[str] = "2.41.0"
 MUTATION_WORKFLOW: typ.Final[str] = "mutation-cargo.yml"
 SUITE_COMMAND: typ.Final[re.Pattern[str]] = re.compile(
     r"\b(?:cargo(?:\s+\+\S+)?\s+(?:test\b|nextest\b|llvm-cov\b)|"
@@ -27,9 +22,7 @@ SUITE_COMMAND: typ.Final[re.Pattern[str]] = re.compile(
 _INSTALL_COMMAND_DIAGNOSTIC: typ.Final[str] = (
     "setup-commands must run one unconditional make install-build-tools command"
 )
-_MISSING_WRAPPER_DIAGNOSTIC: typ.Final[str] = (
-    "no unconditional make install-build-tools step occurs before the suite"
-)
+type JobRouteResult = tuple[bool, list[str]]
 
 
 def build_tool_violations(documents: dict[str, Document]) -> list[str]:
@@ -70,19 +63,22 @@ def build_tool_violations(documents: dict[str, Document]) -> list[str]:
 
 def _job_violations(
     where: str, job: dict[str, object], documents: dict[str, Document]
-) -> tuple[bool, list[str]]:
-    """Classify one job as a suite path and collect its provisioning violations."""
+) -> JobRouteResult:
+    """Apply mutation, reusable-workflow and direct-suite rules in order."""
     if _is_mutation_job(job):
         return True, _mutation_violations(where, job)
     reusable_problem = _unresolved_reusable_problem(job, documents)
     if reusable_problem is not None:
         return False, [f"{where} {reusable_problem}"]
+    return _direct_suite_violations(where, job)
 
+
+def _direct_suite_violations(where: str, job: dict[str, object]) -> JobRouteResult:
+    """Validate a direct suite path after mutation and reusable classification."""
     step_list = _job_steps(where, job)
     suite_indexes = [i for i, step in enumerate(step_list) if _is_suite_step(step)]
     if not suite_indexes:
         return False, []
-
     runner = linux_runner_status(job.get("runs-on"), job)
     if runner is None:
         return True, [
@@ -91,10 +87,7 @@ def _job_violations(
     if not runner:
         return True, []
     first_suite = min(suite_indexes)
-    return True, [
-        *_step_installer_violations(where, step_list, first_suite),
-        *_step_wrapper_violations(where, step_list, first_suite),
-    ]
+    return True, step_provisioning_violations(where, step_list, first_suite)
 
 
 def read_build_tool_workflows() -> dict[str, Document]:
@@ -211,11 +204,6 @@ def _install_order_problem(where: str, install_lines: list[str]) -> str | None:
     return None
 
 
-def _continues_on_error(mapping: dict[str, object]) -> bool:
-    """Treat an expression or any value other than literal false as unsafe."""
-    return mapping.get("continue-on-error", False) is not False
-
-
 def _install_is_conditional(lines: list[str], install_index: int) -> bool:
     """Return whether a preceding shell control block encloses the install."""
     conditional_depth = 0
@@ -265,136 +253,3 @@ def _optional_text(step: dict[str, object], key: str, label: str) -> str | None:
         message = f"cannot read step {label} {value!r}"
         raise WorkflowError(message)
     return value
-
-
-def _step_installer_violations(
-    where: str, steps: list[dict[str, object]], suite_index: int
-) -> list[str]:
-    """Require an unconditional approved setup-rust step before the suite."""
-    candidates = [
-        (index, step, _setup_rust_problems(step))
-        for index, step in enumerate(steps)
-        if _is_setup_rust_candidate(step)
-    ]
-    valid_before = [
-        index
-        for index, _step, problems in candidates
-        if index < suite_index and not problems
-    ]
-    if valid_before:
-        return []
-    problems = _installer_problem_messages(candidates, suite_index)
-    return [f"{where} {problem}" for problem in problems]
-
-
-def _installer_problem_messages(
-    candidates: list[tuple[int, dict[str, object], list[str]]], suite_index: int
-) -> list[str]:
-    """Collect findings; ``_installer_problem_messages([], 0)`` reports no installer.
-
-    Returns
-    -------
-    list[str]
-        Ordered, de-duplicated installer findings.
-    """
-    problems = [problem for _, _, found in candidates for problem in found]
-    if any(index >= suite_index and not found for index, _, found in candidates):
-        problems.append("the pinned linker installer must run before the suite")
-    if not candidates:
-        problems.append("no pinned linker installer occurs before the suite")
-    return list(dict.fromkeys(problems))
-
-
-def _step_wrapper_violations(
-    where: str, steps: list[dict[str, object]], suite_index: int
-) -> list[str]:
-    """Require a standalone Make installer before each Linux suite path."""
-    candidates = [
-        (index, step) for index, step in enumerate(steps)
-        if isinstance(run := step.get("run"), str)
-        and run.strip() == "make install-build-tools"
-    ]
-    valid_before = [
-        index
-        for index, step in candidates
-        if index < suite_index and "if" not in step and not _continues_on_error(step)
-    ]
-    if valid_before:
-        return []
-
-    problems = _wrapper_candidate_problems(candidates, suite_index)
-    return [f"{where} {problem}" for problem in dict.fromkeys(problems)]
-
-
-def _wrapper_candidate_problems(
-    candidates: list[tuple[int, dict[str, object]]], suite_index: int
-) -> list[str]:
-    """Collect findings; ``_wrapper_candidate_problems([], 0)`` finds no step.
-
-    Returns
-    -------
-    list[str]
-        Ordered wrapper findings for the candidates.
-    """
-    if not candidates:
-        return [_MISSING_WRAPPER_DIAGNOSTIC]
-    return [
-        problem
-        for index, step in candidates
-        for problem in _wrapper_step_problems(index, step, suite_index)
-    ]
-
-
-def _wrapper_step_problems(
-    index: int, step: dict[str, object], suite_index: int
-) -> list[str]:
-    """Check setup; ``_wrapper_step_problems(1, {}, 0)`` reports late installation.
-
-    Returns
-    -------
-    list[str]
-        Ordered diagnostics for this installer step.
-    """
-    problems: list[str] = []
-    if "if" in step:
-        problems.append("make install-build-tools step must not have an if condition")
-    if _continues_on_error(step):
-        problems.append("make install-build-tools step must not continue on error")
-    if index >= suite_index:
-        problems.append("make install-build-tools must run before the suite")
-    return problems
-
-
-def _is_setup_rust_candidate(step: dict[str, object]) -> bool:
-    """Recognize setup-rust steps that may own linker provisioning."""
-    uses = step.get("uses")
-    inputs = step.get("with")
-    return (isinstance(uses, str) and SETUP_RUST in uses) or (
-        isinstance(inputs, dict) and "install-mold" in inputs
-    )
-
-
-def _setup_rust_problems(step: dict[str, object]) -> list[str]:
-    """Validate action identity, linker version, and unconditional execution."""
-    uses, inputs = step.get("uses"), step.get("with")
-    if not isinstance(uses, str) or not isinstance(inputs, dict):
-        return ["must use the pinned setup-rust linker installer"]
-    problems = _setup_rust_input_problems(uses, inputs)
-    if "if" in step:
-        problems.append("the pinned linker installer must not have an if condition")
-    if _continues_on_error(step):
-        problems.append("the pinned linker installer must not continue on error")
-    return problems
-
-
-def _setup_rust_input_problems(uses: str, inputs: dict[str, object]) -> list[str]:
-    """Check inputs; ``_setup_rust_input_problems("other", {})`` reports pin failure."""
-    problems: list[str] = []
-    if uses != SETUP_RUST_REF:
-        problems.append("must use the approved pinned setup-rust action")
-    if inputs.get("install-mold") is not True and inputs.get("install-mold") != "true":
-        problems.append("must enable setup-rust install-mold")
-    version = inputs.get("mold-version")
-    if version is not None and str(version) != LINKER_VERSION:
-        problems.append(f"must install pinned linker version {LINKER_VERSION}")
-    return problems

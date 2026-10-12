@@ -1,0 +1,24 @@
+{
+  "rule_sets": [
+    {
+      "matching_content_path": "tests/build_standard_support/config.rs",
+      "matching_content_path_doc": "Raw Cargo and toolchain text parser boundary; retain direct source-text inputs.",
+      "rules": [
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    },
+    {
+      "matching_content_path": "tests/build_backend_contract_support/toml.rs",
+      "matching_content_path_doc": "Raw TOML text parser boundary; retain direct source-text inputs.",
+      "rules": [
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    }
+  ]
+}

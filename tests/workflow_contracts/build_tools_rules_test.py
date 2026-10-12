@@ -1,13 +1,18 @@
 """Test build-tool policy helpers at their validation boundaries."""
 
-import build_tools_rules as rules
+import dataclasses
+
+import build_tools_step_provisioning as provisioning
 import pytest
 from build_tools_rules import (
     _is_suite_step,
     _mutation_violations,
-    _step_installer_violations,
-    _step_wrapper_violations,
     _unresolved_reusable_problem,
+)
+from build_tools_step_provisioning import (
+    _MAKE_WRAPPER_POLICY,
+    _SETUP_RUST_POLICY,
+    _candidate_step_violations,
 )
 from workflow_contract_support import Document, WorkflowError
 
@@ -20,7 +25,7 @@ INSTALL_ORDER_DIAGNOSTIC = (
 SETUP_RUST_DIAGNOSTICS = (
     f"{WHERE} must use the approved pinned setup-rust action",
     f"{WHERE} must enable setup-rust install-mold",
-    f"{WHERE} must install pinned linker version {rules.LINKER_VERSION}",
+    f"{WHERE} must install pinned linker version {provisioning.LINKER_VERSION}",
     f"{WHERE} the pinned linker installer must not have an if condition",
     f"{WHERE} the pinned linker installer must not continue on error",
 )
@@ -29,8 +34,11 @@ SETUP_RUST_DIAGNOSTICS = (
 def _valid_setup() -> dict[str, object]:
     """Return a fresh setup-rust step accepted by the installer policy."""
     return {
-        "uses": rules.SETUP_RUST_REF,
-        "with": {"install-mold": "true", "mold-version": rules.LINKER_VERSION},
+        "uses": provisioning.SETUP_RUST_REF,
+        "with": {
+            "install-mold": "true",
+            "mold-version": provisioning.LINKER_VERSION,
+        },
     }
 
 
@@ -58,11 +66,11 @@ def _valid_setup() -> dict[str, object]:
         pytest.param(
             [
                 {
-                    "uses": f"{rules.SETUP_RUST}@main",
+                    "uses": f"{provisioning.SETUP_RUST}@main",
                     "with": {"install-mold": "false"},
                 },
                 {"uses": "another", "with": {"install-mold": "false"}},
-                {"uses": f"{rules.SETUP_RUST}@main", "with": None},
+                {"uses": f"{provisioning.SETUP_RUST}@main", "with": None},
                 {"run": "cargo test"},
             ],
             2,
@@ -79,17 +87,17 @@ def test_installer_candidates_keep_validity_and_diagnostic_order(
     steps: list[dict[str, object]], suite_index: int, expected: list[str]
 ) -> None:
     """Installer candidates retain valid-before and first-seen message rules."""
-    found = _step_installer_violations(WHERE, steps, suite_index)
+    found = _candidate_step_violations(
+        WHERE, steps, suite_index, _SETUP_RUST_POLICY
+    )
     assert found == expected, found
 
 
-def test_setup_rust_problems_are_computed_once_for_each_candidate(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_setup_rust_problems_are_computed_once_for_each_candidate() -> None:
     """Candidate validation is memoized even when an early candidate is valid."""
     candidates: list[dict[str, object]] = [
         _valid_setup(),
-        {"uses": f"{rules.SETUP_RUST}@main"},
+        {"uses": f"{provisioning.SETUP_RUST}@main"},
     ]
     visited: list[int] = []
 
@@ -98,10 +106,12 @@ def test_setup_rust_problems_are_computed_once_for_each_candidate(
         visited.append(id(step))
         return [] if step is candidates[0] else ["invalid candidate"]
 
-    monkeypatch.setattr(rules, "_setup_rust_problems", record)
+    policy = dataclasses.replace(_SETUP_RUST_POLICY, candidate_problems=record)
     suite_step: dict[str, object] = {"run": "cargo test"}
     candidate_steps: list[dict[str, object]] = [*candidates, suite_step]
-    assert not _step_installer_violations(WHERE, candidate_steps, 2), (
+    assert not _candidate_step_violations(
+        WHERE, candidate_steps, 2, policy
+    ), (
         "valid candidate before the suite should satisfy the installer rule"
     )
     assert visited == [id(step) for step in candidates], visited
@@ -110,13 +120,13 @@ def test_setup_rust_problems_are_computed_once_for_each_candidate(
 def test_setup_rust_diagnostics_keep_input_and_execution_order() -> None:
     """Action and input errors precede unconditional-execution errors."""
     invalid_setup: dict[str, object] = {
-        "uses": f"{rules.SETUP_RUST}@main",
+        "uses": f"{provisioning.SETUP_RUST}@main",
         "with": {"install-mold": "false", "mold-version": "1.0"},
         "if": "always()",
         "continue-on-error": True,
     }
-    found = _step_installer_violations(
-        WHERE, [invalid_setup, {"run": "cargo test"}], 1
+    found = _candidate_step_violations(
+        WHERE, [invalid_setup, {"run": "cargo test"}], 1, _SETUP_RUST_POLICY
     )
     assert tuple(found) == SETUP_RUST_DIAGNOSTICS, found
 
@@ -263,7 +273,9 @@ def test_wrapper_step_violations_keep_candidate_policy(
     steps: list[dict[str, object]], suite_index: int, expected: list[str]
 ) -> None:
     """Wrapper candidates retain their filter, early return and message order."""
-    found = _step_wrapper_violations(WHERE, steps, suite_index)
+    found = _candidate_step_violations(
+        WHERE, steps, suite_index, _MAKE_WRAPPER_POLICY
+    )
     assert found == [f"{WHERE} {message}" for message in expected], found
 
 

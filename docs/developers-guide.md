@@ -318,16 +318,25 @@ Cargo-output parsing stays in `cargo_selection_test.py`; only
 
 In `whitaker_provisioning_rules.py`, only `make_lint_step_status` calls
 `_make_invocation_arguments`, and only `lint_job_action_violations` calls
-`_action_order_violations`. In `build_tools_rules.py`, only
-`_step_installer_violations` may call `_installer_problem_messages`, and only
-`_step_wrapper_violations` may call `_wrapper_candidate_problems`. Keep these
-helpers private to that module; other workflow-policy modules must not import
-them. Keep `_setup_commands`, `_install_order_problem`,
-`_wrapper_step_problems`, `_optional_text`, and `_local_workflow_problem`
-private to their respective mutation, wrapper, suite-step, and
-reusable-workflow policy paths as well. Keep `_setup_rust_input_problems`
-private to `build_tools_rules.py`; only `_setup_rust_problems` may call it, and
-other workflow-policy modules must not import it.
+`_action_order_violations`. In `build_tools_rules.py`, only `_job_violations`
+may select mutation, reusable-workflow, or direct-suite handling. It is the
+only caller of `_direct_suite_violations`, which validates all step shapes and
+scans the complete step list before selecting the first suite. This prevents a
+malformed later step from being hidden by an earlier test command.
+`_direct_suite_violations` is the only caller of `step_provisioning_violations`
+in `build_tools_step_provisioning.py`. That module owns setup-rust action
+validation, Make-installer validation, and their diagnostic ordering.
+`_CandidatePolicy` pairs candidate discovery, the valid-predecessor check, and
+diagnostics; the single `step_provisioning_violations` entry point applies
+those policies in order. Keep candidate and diagnostic helpers private there;
+only `_setup_rust_problems` may call `_setup_rust_input_problems`. The shared
+`_continues_on_error` predicate may also be called by `_mutation_violations` in
+`build_tools_rules.py`.
+
+Keep `_setup_commands` and `_install_order_problem` private to the mutation
+workflow path, `_optional_text` private to suite-step inspection, and
+`_local_workflow_problem` private to reusable-workflow routing. Other
+workflow-policy modules must not import these helpers.
 
 Keep matrix-value and runner-status helpers in `build_tools_runner.py`, where
 they compose the module's matrix readers and callers. Provisioning requirements
@@ -411,6 +420,14 @@ are private to `make.rs`; they have no production callers outside that module.
 Within it, `assigned_rustflags` alone dispatches to the wrapper and quoted
 readers, and `quoted_assignment` alone calls the inheritance predicates. The
 child test module exercises the helpers directly.
+
+The Cargo configuration and TOML readers accept raw source text because their
+contracts are parser boundaries. Keep their `&str` inputs direct rather than
+wrapping syntax fragments in types that add no validation. CodeScene's
+string-heavy argument rule is disabled only for these two reader files because
+it treats required parser inputs as domain arguments. Other paths retain the
+default rule. Reassess this exception if either module starts accepting typed
+domain values instead of source text.
 
 ### Backend support
 
