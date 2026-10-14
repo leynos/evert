@@ -21,7 +21,7 @@ It is placeholder scaffolding until the compiler crates described in the design
 land. The package has these characteristics:
 
 - It uses Rust edition 2024 and has no runtime dependencies.
-- `rust-toolchain.toml` pins the `nightly-2026-05-28` toolchain.
+- `rust-toolchain.toml` pins the development nightly toolchain.
 - `Cargo.toml` defines strict Clippy, rustc, and rustdoc lint tables.
 - The library (`src/lib.rs`) is auto-detected and contains a doctested `greet`
   stub.
