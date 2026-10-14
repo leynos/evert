@@ -5,7 +5,6 @@ edition = "2024"
 description = "Inside-out Haskell"
 license = "ISC"
 repository = "https://github.com/leynos/evert"
-homepage = "https://github.com/leynos/evert"
 readme = "README.md"
 keywords = ["language"]
 categories = ["development-tools"]
