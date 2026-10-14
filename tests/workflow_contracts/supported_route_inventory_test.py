@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from python_lint_gateway_test import _makefile_variable
 from supported_route_rules import (
     COVERAGE,
     _release_command_errors,
@@ -20,6 +21,66 @@ def test_supported_workflow_routes_match_the_documented_inventory() -> None:
     """Accept the committed workflows and developers' guide as they stand."""
     violations = supported_route_violations(fresh_documents(), GUIDE_TEXT)
     assert violations == [], "\n".join(violations)
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job_id"),
+    [
+        pytest.param("ci.yml", "build-test", id="pull-request-coverage"),
+        pytest.param("coverage-main.yml", "coverage-upload", id="main-coverage"),
+    ],
+)
+def test_coverage_inputs_match_the_python_baseline(workflow: str, job_id: str) -> None:
+    """Keep both committed coverage interpreters on the Makefile baseline."""
+    documents = fresh_documents()
+    job = jobs(workflow, documents[workflow])[job_id]
+    steps = job.get("steps")
+    assert isinstance(steps, list), "coverage job steps must be a list"
+    coverage = next(
+        step for step in steps if f"{COVERAGE}@" in str(step.get("uses", ""))
+    )
+    inputs = coverage.get("with")
+    assert isinstance(inputs, dict), "coverage action inputs must be a mapping"
+    assert inputs.get("python-version") == _makefile_variable("PYTHON_BASELINE"), (
+        f"{workflow}:jobs.{job_id} must select the repository Python baseline"
+    )
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job_id"),
+    [
+        pytest.param("ci.yml", "build-test", id="pull-request-coverage"),
+        pytest.param("coverage-main.yml", "coverage-upload", id="main-coverage"),
+    ],
+)
+@pytest.mark.parametrize(
+    "version",
+    [
+        pytest.param(None, id="missing-interpreter"),
+        pytest.param("3.12", id="unsupported-interpreter"),
+    ],
+)
+def test_coverage_interpreter_mutations_are_rejected(
+    workflow: str, job_id: str, version: str | None
+) -> None:
+    """Reject absent and stale interpreter inputs on both coverage lanes."""
+    documents = fresh_documents()
+    job = jobs(workflow, documents[workflow])[job_id]
+    steps = job.get("steps")
+    assert isinstance(steps, list), "coverage job steps must be a list"
+    coverage = next(
+        step for step in steps if f"{COVERAGE}@" in str(step.get("uses", ""))
+    )
+    inputs = coverage.get("with")
+    assert isinstance(inputs, dict), "coverage action inputs must be a mapping"
+    if version is None:
+        inputs.pop("python-version")
+    else:
+        inputs["python-version"] = version
+
+    errors = supported_route_violations(documents, GUIDE_TEXT)
+    expected = f"{workflow}:jobs.{job_id} coverage must retain"
+    assert any(expected in error for error in errors), errors
 
 
 @pytest.mark.parametrize(

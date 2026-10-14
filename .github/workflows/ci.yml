@@ -111,4 +111,5 @@ jobs:
           output-path: coverage.xml
           format: cobertura
           with-ratchet: 'true'
+          python-version: '3.14'
           publish-artefact: 'false'

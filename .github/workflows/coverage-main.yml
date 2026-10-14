@@ -93,6 +93,7 @@ jobs:
           output-path: coverage.xml
           format: cobertura
           with-ratchet: 'true'
+          python-version: '3.14'
       # No env binds the token. The uploader is a composite action: a token in
       # its step's env would reach its nested upload-artifact and cache steps
       # too, and it binds the token itself from its access-token input. Actions
