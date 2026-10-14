@@ -345,9 +345,9 @@ CST stays lossless.
 **Parsing with Chumsky.** Chumsky is a parser library for Rust that makes
 writing expressive, high-performance parsers easy. Critically for Evert's
 peglet notation and its layout-sensitive grammar, Chumsky's parsers are
-recursive descent parsers and are capable of parsing parsing expression
-grammars (PEGs), whose ordered choice expresses many practical context-free and
-some non-context-free languages, though PEGs do not cover every context-free
+recursive descent parsers that support parsing expression grammars (PEGs),
+whose ordered choice expresses many practical context-free and some
+non-context-free languages, though PEGs do not cover every context-free
 language; it also supports context-sensitive grammars via a set of dedicated
 combinators that integrate cleanly with the rest of the library, allowing it to
 parse syntaxes like Rust-style raw strings and Python-style semantic
@@ -443,10 +443,10 @@ compatibility matrix that constrains the workspace.
 The binding constraint is the LLVM toolchain coupling. Inkwell requires Rust
 1.85+ and one of LLVM 11–22, selected by pointing Cargo.toml to a single LLVM
 version feature flag of the form llvmM-0 where M corresponds to the LLVM major
-version. Because LLVM must be installed on the system and the version specified
-in the Cargo.toml dependencies, the LLVM backend is gated behind an optional
-Cargo feature so the front end and interpreter build with no native dependency
-— reinforcing the interpreter-first plan. Inkwell remains pre-1.0, and the
+version. Because LLVM must be installed on the system and the required version
+is specified in Cargo.toml, the LLVM backend is gated behind an optional Cargo
+feature so the front end and interpreter build with no native dependency —
+reinforcing the interpreter-first plan. Inkwell remains pre-1.0, and the
 maintainers note they may make breaking changes on master from time to time
 since they are pre-v1.0.0, in compliance with semver, so the dependency is
 pinned to an exact minor version.
@@ -459,7 +459,7 @@ requirements: `la-arena` (arena allocation with stable indices), `lasso` or
 ecosystem standard: unit and integration tests via `cargo test`, snapshot tests
 for diagnostics and IR pretty-printing, property tests for the lexer/layout
 round-trip, and a CI workflow running `build`, `test`, `fmt --check`, `clippy`,
-and `cargo-deny` (license/advisory auditing).
+and `cargo-deny` (licence and advisory auditing).
 
 **Design system check.** No UI component library or design system is specified;
 the product is a compiler CLI. The DESIGN SYSTEM ALIGNMENT PROTOCOL therefore
@@ -516,14 +516,15 @@ workspace.** Following the rust-analyzer model — where the syntax layer
 provides a lossless CST/AST and a separate HIR layer provides semantic
 information, and all analysis flows through Salsa — Evert is decomposed into
 single-responsibility crates wired together by a Salsa database. The user's
-proposed crate layout is adopted verbatim as the workspace skeleton:
+proposed crate layout is adapted as the workspace skeleton, with `evert_typeck`
+renamed to `evert_types` to match the current design terminology:
 
 ```text
 evert_span
 evert_syntax          # Logos, Chumsky, layout expansion
 evert_db              # Salsa database and query declarations
 evert_hir
-evert_typeck
+evert_types
 evert_core
 evert_lower
 evert_interpreter
@@ -653,7 +654,8 @@ Rust module paths; the file-level breakdown appears in 0.5.
     assignment.
   - Location: `crates/evert_hir/src/{resolve.rs, lower_ast.rs, hir.rs}`
   - Dependencies: `evert_syntax`, `evert_span`, `evert_db`.
-- **Component E: `evert_types`** (the user's `evert_typeck`)
+- **Component E: `evert_types`** (named `evert_typeck` in the original user
+  sketch)
   - Purpose: kinds, Hindley-Milner inference, effect rows, traits/coherence,
     deriving, and exhaustiveness checking; hosts the private `InferenceContext`.
   - Location:
@@ -883,7 +885,7 @@ of the tree.
 ├── rust-toolchain.toml              # Pin the exact nightly-2026-05-28 toolchain
 ├── rustfmt.toml                     # Formatting configuration
 ├── clippy.toml                      # Lint configuration thresholds
-├── deny.toml                        # cargo-deny: license + advisory + ban rules
+├── deny.toml                        # cargo-deny: licence + advisory + ban rules
 ├── .gitignore                       # Ignore target/, local LLVM paths, editor cruft
 ├── LICENSE-APACHE                   # Apache-2.0 license
 ├── LICENSE-MIT                      # MIT license (dual-licensed, Rust convention)
@@ -1088,10 +1090,10 @@ of the tree.
   heap. Because reference counting does not reclaim cycles, the potential for
   leaking cyclic lazy structures (e.g., `let rec ones = Next(1, lazy ones)`) is
   a documented, accepted limitation for the MVP. The later non-moving tracing
-  collector (0.1.2, Integration Requirements) is expected to reclaim such
-  cycles once it ships. Note that docs/evert-design.md §10 defers the final
-  runtime heap strategy to later ADRs, so this reference plan is not binding on
-  that decision.
+  collector ([Integration Requirements](#integration-requirements)) is expected
+  to reclaim such cycles once it ships. Note that docs/evert-design.md §10
+  defers the final runtime heap strategy to later ADRs, so this reference plan
+  is not binding on that decision.
 - **Multi-shot continuations**: MVP handlers support one-shot resumption;
   cloning persistent continuation frames for multi-shot resumption is deferred.
 - **IDE / language-server (LSP) binary**: the query API is designed to enable
@@ -1299,7 +1301,7 @@ an executable test strategy that pins those invariants:
   carry the correctness-critical logic; the deferred backend scaffold is held
   to a lower bar until M12.
 - **Continuous integration gates:** every change must pass `cargo build`,
-  `cargo test`, `cargo fmt --check`, `cargo clippy -D warnings`, and
+  `cargo test`, `cargo fmt --check`, `cargo clippy -- -D warnings`, and
   `cargo deny check` before merge.
 - **Diagnostic quality bar:** following ECLP-0000, a construct that cannot
   explain itself clearly to a tired human does not ship; every error renders
