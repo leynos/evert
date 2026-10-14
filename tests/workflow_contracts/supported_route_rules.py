@@ -147,6 +147,7 @@ def _coverage_route(ref: _JobRef, steps: list[Step], errors: list[str]) -> Found
     if step.get("env") != LLVM_ENV:
         errors.append(f"{ref.where} coverage must use the explicit LLVM route")
     expected = {
+        "python-version": "3.14",
         "output-path": "coverage.xml",
         "format": "cobertura",
         "with-ratchet": "true",
