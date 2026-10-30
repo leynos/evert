@@ -71,7 +71,7 @@ jobs:
         with:
           python-version: '3.14'
       - name: Install Whitaker
-        uses: leynos/shared-actions/.github/actions/install-whitaker@2ddf19b3fd52c0f1089db0d57b015f859b80ab67
+        uses: leynos/shared-actions/.github/actions/install-whitaker@5a99aed78ce68dcebd3052b75c31e6f173162b1e
         with:
           cranelift: 'false'
       - name: Audit dependencies
