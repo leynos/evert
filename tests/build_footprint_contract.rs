@@ -90,19 +90,21 @@ fn no_rustflags_source_carries_a_raw_metadata_flag() {
     );
 }
 
+/// Returns the pinned channel named in `rust-toolchain.toml`, if any.
+fn pinned_channel() -> Option<String> {
+    TOOLCHAIN.lines().find_map(|line| {
+        let (name, assigned) = line.split_once('=')?;
+        (name.trim() == "channel").then(|| assigned.trim().trim_matches('"').to_owned())
+    })
+}
+
 /// Scenario: the pinned toolchain.
 ///
 /// Invariant: it is a dated nightly from 2026-07-31, the range the native key
 /// serves.
 #[test]
 fn the_pin_is_a_dated_nightly_that_accepts_the_native_key() {
-    let channel = TOOLCHAIN
-        .lines()
-        .find_map(|line| {
-            let (name, assigned) = line.split_once('=')?;
-            (name.trim() == "channel").then(|| assigned.trim().trim_matches('"'))
-        })
-        .unwrap_or("");
+    let channel = pinned_channel().unwrap_or_default();
     let date = channel.strip_prefix("nightly-").unwrap_or("");
     assert!(
         date >= NATIVE_KEY_FROM,
@@ -120,8 +122,9 @@ mod cargo_boundary {
 
     use camino::Utf8PathBuf;
     use cap_std::{ambient_authority, fs_utf8::Dir};
+    use rstest::rstest;
 
-    use super::{CARGO_CONFIG, MANIFEST, TOOLCHAIN, table_lines};
+    use super::{CARGO_CONFIG, MANIFEST, pinned_channel, table_lines};
 
     /// Variables that would add a wrapper or override the profile under test.
     const CLEARED: [&str; 10] = [
@@ -136,17 +139,6 @@ mod cargo_boundary {
         "CARGO_PROFILE_DEV_DEBUG",
         "CARGO_PROFILE_DEV_INCREMENTAL",
     ];
-
-    /// Returns the pinned channel from the toolchain file.
-    fn channel() -> String {
-        TOOLCHAIN
-            .lines()
-            .find_map(|line| {
-                let (name, assigned) = line.split_once('=')?;
-                (name.trim() == "channel").then(|| assigned.trim().trim_matches('"').to_owned())
-            })
-            .expect("rust-toolchain.toml must name a channel")
-    }
 
     /// Returns the `[profile.dev]` table text of the root manifest.
     fn dev_profile() -> String {
@@ -182,7 +174,10 @@ mod cargo_boundary {
             .expect("the configuration must be writable");
         let mut command = Command::new("cargo");
         command
-            .arg(format!("+{}", channel()))
+            .arg(format!(
+                "+{}",
+                pinned_channel().expect("rust-toolchain.toml must name a channel")
+            ))
             .args(["build", "--color", "never", "--offline", "-v"])
             .current_dir(root.as_std_path())
             .env("CARGO_TARGET_DIR", root.join("target").as_std_path());
@@ -225,27 +220,23 @@ mod cargo_boundary {
         );
     }
 
-    /// Scenario: the documented `CARGO_PROFILE_DEV_DEBUG=true` override.
+    /// Scenario: each documented override of the footprint defaults.
     ///
-    /// Invariant: it restores debug information.
-    #[test]
-    fn the_debug_override_restores_debug_info() {
-        let command = compile_fixture("footprint-debug", &[("CARGO_PROFILE_DEV_DEBUG", "true")]);
+    /// Invariant: `CARGO_PROFILE_DEV_DEBUG=true` restores debug information, and
+    /// `CARGO_INCREMENTAL=1` restores incremental compilation.
+    #[rstest]
+    #[case::debug("footprint-debug", "CARGO_PROFILE_DEV_DEBUG", "true", "-C debuginfo=2")]
+    #[case::incremental("footprint-incremental", "CARGO_INCREMENTAL", "1", "-C incremental=")]
+    fn a_documented_override_restores_its_setting(
+        #[case] name: &str,
+        #[case] variable: &str,
+        #[case] setting: &str,
+        #[case] expected: &str,
+    ) {
+        let command = compile_fixture(name, &[(variable, setting)]);
         assert!(
-            command.contains("-C debuginfo=2"),
-            "the override must restore debug info: {command}"
-        );
-    }
-
-    /// Scenario: the documented `CARGO_INCREMENTAL=1` override.
-    ///
-    /// Invariant: it restores incremental compilation.
-    #[test]
-    fn the_incremental_override_restores_incremental_state() {
-        let command = compile_fixture("footprint-incremental", &[("CARGO_INCREMENTAL", "1")]);
-        assert!(
-            command.contains("-C incremental="),
-            "the override must restore incremental: {command}"
+            command.contains(expected),
+            "{variable}={setting} must restore the setting ({expected}): {command}"
         );
     }
 }
