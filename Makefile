@@ -253,7 +253,7 @@ lint: interrogate lint-clippy lint-whitaker lint-python ## Run docstring, Rust, 
 # Keep Whitaker on the Clippy route's explicit prerequisite edge so `make -j`
 # cannot overlap the two compiler gates.
 lint-whitaker: lint-clippy
-	env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="-D warnings" $(WHITAKER) $(WHITAKER_PACKAGES) -- $(CARGO_FLAGS)
+	unset CARGO_ENCODED_RUSTFLAGS; RUSTFLAGS="-D warnings" $(WHITAKER) $(WHITAKER_PACKAGES) -- $(CARGO_FLAGS)
 
 # Python lints run last, after the Rust compiler gates, and need no Rust
 # toolchain. Their commands share the repository source inventory; Interrogate
