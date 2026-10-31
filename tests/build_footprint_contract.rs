@@ -111,9 +111,11 @@ fn the_pin_is_a_dated_nightly_that_accepts_the_native_key() {
     );
 }
 
-/// Proves the settings at the Cargo boundary, on a one-file crate that carries
-/// this repository's own `[profile.dev]` table and Cargo configuration.
 mod cargo_boundary {
+    //! Proves the settings at the Cargo boundary, on a one-file crate that
+    //! carries this repository's own `[profile.dev]` table and Cargo
+    //! configuration.
+
     use std::process::Command;
 
     use camino::Utf8PathBuf;
