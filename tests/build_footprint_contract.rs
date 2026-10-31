@@ -119,7 +119,7 @@ mod cargo_boundary {
     use camino::Utf8PathBuf;
     use cap_std::{ambient_authority, fs_utf8::Dir};
 
-    use super::{CARGO_CONFIG, MANIFEST, TOOLCHAIN, table_lines, value};
+    use super::{CARGO_CONFIG, MANIFEST, TOOLCHAIN, table_lines};
 
     /// Variables that would add a wrapper or override the profile under test.
     const CLEARED: [&str; 10] = [
@@ -193,11 +193,13 @@ mod cargo_boundary {
         let output = command.output().expect("cargo must run");
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
         assert!(output.status.success(), "cargo build failed:\n{stderr}");
-        stderr
+        let Some(line) = stderr
             .lines()
             .find(|line| line.contains("Running") && line.contains("--crate-name footprint"))
-            .map(str::to_owned)
-            .unwrap_or_else(|| panic!("no rustc command line in Cargo's output:\n{stderr}"))
+        else {
+            panic!("no rustc command line in Cargo's output:\n{stderr}");
+        };
+        line.to_owned()
     }
 
     /// Scenario: a default development build.
