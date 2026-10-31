@@ -486,7 +486,36 @@ it treats required parser inputs as domain arguments. Other paths retain the
 default rule. Reassess this exception if either module starts accepting typed
 domain values instead of source text.
 
-### Backend support
+### Development build footprint
+
+The development profile sets `incremental = false` and `debug = 0` in
+`Cargo.toml`, so a dev build keeps no incremental state or debug information.
+To debug, set `CARGO_PROFILE_DEV_DEBUG=true`; to rebuild incrementally, set
+`CARGO_INCREMENTAL=1`. `.cargo/config.toml` also sets
+`[unstable] embed-metadata = false`, the native Cargo key for nightlies from
+2026-07-31, so Cargo coordinates metadata output itself. No raw rustc metadata
+flags are used, and the pin is not moved to suit the key.
+`tests/build_footprint_contract.rs` holds all three settings.
+
+### Whitaker isolation
+
+`make lint-whitaker` runs `unset CARGO_ENCODED_RUSTFLAGS;` and then assigns the
+literal `RUSTFLAGS="-D warnings"` before it invokes Whitaker. Whitaker runs
+under the toolchain its installer manages, not the repository's pin, so it
+takes none of the development standard: no `-Zthreads=8`, no `mold` linker
+flag, no Cranelift backend and no inherited caller flags. Cargo gives
+`CARGO_ENCODED_RUSTFLAGS` precedence over `RUSTFLAGS`, so unsetting it is what
+lets the literal `RUSTFLAGS` govern; the `unset` is a separate command, not an
+`env -u` wrapper, so the Concordat build-defaults rule reads the recipe as the
+isolation boundary rather than as a gate build that lost the fast flags.
+`tests/makefile_contract.rs` holds the boundary
+(`whitaker_does_not_inherit_development_flags`).
+
+### Cranelift backend support
+
+The pinned toolchain is `nightly-2026-10-30`. The exception below was recorded
+on 2026-09-29 (see the debugging plan in `docs/debugging/`) and has not been
+re-measured on the current pin; the review is deferred to 1 April 2027.
 
 Cranelift is excluded from the development defaults and pinned toolchain
 components. With Cranelift selected, the `catch_unwind` contract fails and a

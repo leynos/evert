@@ -252,7 +252,7 @@ fn whitaker_does_not_inherit_development_flags() {
         .first()
         .expect("lint must expose a Whitaker command");
     assert!(
-        command.contains("env -u CARGO_ENCODED_RUSTFLAGS"),
+        command.starts_with("unset CARGO_ENCODED_RUSTFLAGS; "),
         "Whitaker must receive an isolated compiler environment: {command}"
     );
     assert!(

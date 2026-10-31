@@ -27,6 +27,11 @@ land. The package has these characteristics:
   stub.
 - The binary (`src/main.rs`) is auto-detected and is a stub entrypoint that
   prints a greeting.
+- Development builds keep no incremental compilation state and no debug
+  information: `[profile.dev]` sets `incremental = false` and `debug = 0`, and
+  `.cargo/config.toml` sets the native `[unstable] embed-metadata = false` key.
+  To debug, set `CARGO_PROFILE_DEV_DEBUG=true`; to rebuild incrementally, set
+  `CARGO_INCREMENTAL=1`.
 - `[package.metadata.binstall]` points cargo-binstall at GitHub release assets.
 - `.github/workflows/release.yml` builds and publishes release binaries for
   Linux, Windows, macOS, and FreeBSD targets when a `v*.*.*` tag is pushed.
