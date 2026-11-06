@@ -194,9 +194,7 @@ BUILD_TOOLS_PREFIX ?= $(shell \
 	if [[ -n "$$RUNNER_TOOL_CACHE" && "$$linker" == "$$RUNNER_TOOL_CACHE"/mold/*/$(BUILD_HOST_ARCH)/bin/ld.mold ]]; then \
 		printf '%s' "$$prefix"; \
 	fi)
-ifeq ($(strip $(BUILD_TOOLS_PREFIX)),)
-$(error GITHUB_ACTIONS=true but setup-rust must put its verified Linux linker on PATH before Make runs)
-endif
+BUILD_TOOLS_VERIFIED := $(if $(strip $(BUILD_TOOLS_PREFIX)),ok,$(error GITHUB_ACTIONS=true but setup-rust must put its verified Linux linker on PATH before Make runs))
 endif
 endif
 BUILD_TOOLS_PREFIX ?= $(HOME)/.local
