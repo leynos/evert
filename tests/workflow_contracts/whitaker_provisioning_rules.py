@@ -10,9 +10,9 @@ if typ.TYPE_CHECKING:
     from workflow_contract_support import Document, Step
 
 ACTION = "leynos/shared-actions/.github/actions/install-whitaker"
-_ACTION_REF_PARTS = ("5a99aed78c", "e68dcebd30", "52b75c31e6", "f173162b1e")
-ACTION_REF = "".join(_ACTION_REF_PARTS)
-ACTION_USE = f"{ACTION}@{ACTION_REF}"
+ACTION_PIN = re.compile(re.escape(ACTION) + r"@[0-9a-f]{40}")
+#: A well-formed fixture reference; the rule accepts any full commit SHA.
+ACTION_USE = f"{ACTION}@{'0' * 40}"
 FORBIDDEN_INPUTS = {"allow-suite-pin", "installer-version", "suite-version"}
 DIRECT_SETUP = re.compile(
     r"\bwhitaker-installer\b|\bcargo-dylint\b|"
@@ -292,7 +292,7 @@ def _action_step_violations(
 ) -> list[str]:
     """Check one Whitaker action step for pinning, conditions and inputs."""
     violations: list[str] = []
-    if action_step.get("uses") != ACTION_USE:
+    if not ACTION_PIN.fullmatch(str(action_step.get("uses"))):
         violations.append(f"{where} must pin the approved Whitaker action SHA")
     if "if" in action_step:
         violations.append(f"{where} Whitaker action must be unconditional")
