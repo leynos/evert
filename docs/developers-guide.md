@@ -518,22 +518,31 @@ components. The `catch_unwind` and joined-thread probes recorded on 2026-09-29
 (see the superseded debugging plan in `docs/debugging/`) were removed on
 2026-11-13: they checked the toolchain, not the product.
 
-Measured on 2026-11-13 on the pinned nightly, same commit, with
-`cargo nextest run --workspace --all-targets --all-features --no-fail-fast`:
+Measured on 2026-11-13 on the pinned nightly, same commit:
 
-- Under LLVM, all 201 tests passed, and the doctest passed.
-- Under Cranelift (`CARGO_UNSTABLE_CODEGEN_BACKEND=true`,
+- Under LLVM, with no backend variables set,
+  `cargo nextest run --workspace --all-targets --all-features --no-fail-fast`
+  ran 201 tests and all passed. The doctest, run separately with
+  `cargo test --doc --workspace --all-features`, passed.
+- Under Cranelift, the same two commands with
+  `CARGO_UNSTABLE_CODEGEN_BACKEND=true`,
   `CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift` and
-  `CARGO_PROFILE_TEST_CODEGEN_BACKEND=cranelift`), 200 passed and one failed:
-  `stable_cargo_config::stable_cargo_accepts_configuration_with_release_flag_overrides`.
-  The doctest passed. No test needs a panic to unwind.
+  `CARGO_PROFILE_TEST_CODEGEN_BACKEND=cranelift` passed 200 of 201 tests and
+  the doctest. No test needs a panic to unwind.
 
-The failing test is the reason for the exception. Release builds run
-`cross +stable build --release`, and stable Cargo refuses a codegen-backend key
-in `.cargo/config.toml`. Cranelift can therefore become the default only after
-the release route moves to the pinned nightly (release builds keep LLVM, which
-the release profile guarantees). That change to the release workflow is tracked
-by the [follow-up issue #80](https://github.com/leynos/evert/issues/80).
+The one failure is
+`stable_cargo_config::stable_cargo_accepts_configuration_with_release_flag_overrides`.
+That probe runs stable Cargo, clears only the `RUSTFLAGS` variables, and so
+inherits the `CARGO_PROFILE_*_CODEGEN_BACKEND` variables from the Cranelift
+run; stable Cargo refuses them (`config profile dev is not valid`). Today
+`.cargo/config.toml` names no backend, so this is the measurement's own
+environment, not a defect in the repository. It does show the adoption
+obstacle: release builds run `cross +stable build --release`, and stable Cargo
+refuses a codegen-backend profile key, so a Cranelift default in
+`.cargo/config.toml` needs the release route to move to the pinned nightly
+first (release builds keep LLVM). That is a change to the release workflow, and
+the [tracking issue #80](https://github.com/leynos/evert/issues/80) stays open
+for it.
 
 ## Tooling
 
