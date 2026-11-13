@@ -518,7 +518,7 @@ components. The `catch_unwind` and joined-thread probes recorded on 2026-09-29
 (see the superseded debugging plan in `docs/debugging/`) were removed on
 2026-11-13: they checked the toolchain, not the product.
 
-Measured on 2026-11-13 on the pinned nightly, same commit:
+Measured on 2026-11-13 on the pinned `nightly-2026-11-12`, same commit:
 
 - Under LLVM, with no backend variables set,
   `cargo nextest run --workspace --all-targets --all-features --no-fail-fast`
