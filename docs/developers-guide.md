@@ -513,18 +513,36 @@ isolation boundary rather than as a gate build that lost the fast flags.
 
 ### Cranelift backend support
 
-The pinned toolchain is `nightly-2026-10-30`. The exception below was recorded
-on 2026-09-29 (see the debugging plan in `docs/debugging/`) and has not been
-re-measured on the current pin; the review is deferred to 1 April 2027.
-
 Cranelift is excluded from the development defaults and pinned toolchain
-components. With Cranelift selected, the `catch_unwind` contract fails and a
-panicking joined thread aborts with `failed to initiate panic, error 5`. Both
-probes pass on LLVM, so the standard retains LLVM until Cranelift supports
-these panic paths. The
-[follow-up issue #80](https://github.com/leynos/evert/issues/80) schedules a
-review for 1 April 2027; the tests must remain intact when support is
-reassessed.
+components. The `catch_unwind` and joined-thread probes recorded on 2026-09-29
+(see the superseded debugging plan in `docs/debugging/`) were removed on
+2026-11-13: they checked the toolchain, not the product.
+
+Measured on 2026-11-13 on the pinned nightly, same commit:
+
+- Under LLVM, with no backend variables set,
+  `cargo nextest run --workspace --all-targets --all-features --no-fail-fast`
+  ran 201 tests and all passed. The doctest, run separately with
+  `cargo test --doc --workspace --all-features`, passed.
+- Under Cranelift, the same two commands with
+  `CARGO_UNSTABLE_CODEGEN_BACKEND=true`,
+  `CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift` and
+  `CARGO_PROFILE_TEST_CODEGEN_BACKEND=cranelift` passed 200 of 201 tests and
+  the doctest. No test needs a panic to unwind.
+
+The one failure is
+`stable_cargo_config::stable_cargo_accepts_configuration_with_release_flag_overrides`.
+That probe runs stable Cargo, clears only the `RUSTFLAGS` variables, and so
+inherits the `CARGO_PROFILE_*_CODEGEN_BACKEND` variables from the Cranelift
+run; stable Cargo refuses them (`config profile dev is not valid`). Today
+`.cargo/config.toml` names no backend, so this is the measurement's own
+environment, not a defect in the repository. It does show the adoption
+obstacle: release builds run `cross +stable build --release`, and stable Cargo
+refuses a codegen-backend profile key, so a Cranelift default in
+`.cargo/config.toml` needs the release route to move to the pinned nightly
+first (release builds keep LLVM). That is a change to the release workflow, and
+the [tracking issue #80](https://github.com/leynos/evert/issues/80) stays open
+for it.
 
 ## Tooling
 

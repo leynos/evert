@@ -86,8 +86,10 @@ pinned Rust toolchain and linker tools for native Linux x86_64 and aarch64
 development routes. On supported Linux hosts, the development build
 (`make build`), tests (`make test`), lint, and typecheck use rustc's LLVM
 backend, the nightly `-Zthreads=8` frontend, and the pinned `mold` linker.
-Cranelift is not selected: its panic-unwind failures are tracked for review in
-[issue #80](https://github.com/leynos/evert/issues/80) on 1 April 2027.
+Cranelift is not selected: the release build uses stable Cargo, which refuses a
+codegen-backend key in the shared configuration. See "Cranelift backend
+support" in the developers' guide and
+[issue #80](https://github.com/leynos/evert/issues/80).
 
 The Linux Cargo configuration requires the pinned `mold` binary and the
 `evert-clang-mold` wrapper. Run `make install-build-tools` before the first
