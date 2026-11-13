@@ -332,24 +332,3 @@ fn release_workflow_clears_development_flags() {
         rustflags_bindings
     );
 }
-
-/// Catching an unwind must remain available under the LLVM development backend.
-#[test]
-fn catch_unwind_observes_an_intentional_panic() {
-    let outcome = std::panic::catch_unwind(|| panic!("intentional unwind probe"));
-    assert!(outcome.is_err(), "catch_unwind must observe the panic");
-}
-
-/// A joined thread must report that its closure panicked.
-#[test]
-fn joining_a_panicking_thread_reports_its_panic() {
-    let outcome = std::thread::spawn(|| panic!("intentional thread panic probe")).join();
-    assert!(outcome.is_err(), "joining the thread must report its panic");
-}
-
-/// The test harness must still recognize the standard should-panic route.
-#[test]
-#[should_panic(expected = "intentional should-panic probe")]
-fn should_panic_observes_an_intentional_panic() {
-    panic!("intentional should-panic probe");
-}

@@ -1,5 +1,10 @@
 # Debugging plan: Cranelift unwind test abort
 
+> **Superseded (2026-11-13).** The `catch_unwind` and joined-thread probes this
+> plan investigated were removed: they checked the toolchain, not the product.
+> See "Cranelift backend support" in `docs/developers-guide.md` for the current
+> measurement. This plan is kept as history.
+
 **Generated**: 2026-09-29 **Issue ID**: PR #64, build-standard batch
 **Severity**: Blocking for the requested Cranelift development default
 **Falsification sub-agent**: `alchemist` **Planning agent boundary**: The first

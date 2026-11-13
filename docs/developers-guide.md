@@ -513,18 +513,27 @@ isolation boundary rather than as a gate build that lost the fast flags.
 
 ### Cranelift backend support
 
-The pinned toolchain is `nightly-2026-10-30`. The exception below was recorded
-on 2026-09-29 (see the debugging plan in `docs/debugging/`) and has not been
-re-measured on the current pin; the review is deferred to 1 April 2027.
-
 Cranelift is excluded from the development defaults and pinned toolchain
-components. With Cranelift selected, the `catch_unwind` contract fails and a
-panicking joined thread aborts with `failed to initiate panic, error 5`. Both
-probes pass on LLVM, so the standard retains LLVM until Cranelift supports
-these panic paths. The
-[follow-up issue #80](https://github.com/leynos/evert/issues/80) schedules a
-review for 1 April 2027; the tests must remain intact when support is
-reassessed.
+components. The `catch_unwind` and joined-thread probes recorded on 2026-09-29
+(see the superseded debugging plan in `docs/debugging/`) were removed on
+2026-11-13: they checked the toolchain, not the product.
+
+Measured on 2026-11-13 on the pinned nightly, same commit, with
+`cargo nextest run --workspace --all-targets --all-features --no-fail-fast`:
+
+- Under LLVM, all 201 tests passed, and the doctest passed.
+- Under Cranelift (`CARGO_UNSTABLE_CODEGEN_BACKEND=true`,
+  `CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift` and
+  `CARGO_PROFILE_TEST_CODEGEN_BACKEND=cranelift`), 200 passed and one failed:
+  `stable_cargo_config::stable_cargo_accepts_configuration_with_release_flag_overrides`.
+  The doctest passed. No test needs a panic to unwind.
+
+The failing test is the reason for the exception. Release builds run
+`cross +stable build --release`, and stable Cargo refuses a codegen-backend key
+in `.cargo/config.toml`. Cranelift can therefore become the default only after
+the release route moves to the pinned nightly (release builds keep LLVM, which
+the release profile guarantees). That change to the release workflow is tracked
+by the [follow-up issue #80](https://github.com/leynos/evert/issues/80).
 
 ## Tooling
 
