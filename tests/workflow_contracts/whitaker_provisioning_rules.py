@@ -238,18 +238,17 @@ def development_cranelift_default(config: object) -> bool | None:
     """Classify Cranelift from the parsed Cargo configuration supplied by caller."""
     if not isinstance(config, dict):
         return None
+    profile = config.get("profile")
+    dev = profile.get("dev") if isinstance(profile, dict) else None
+    if isinstance(dev, dict) and dev.get("codegen-backend") == "cranelift":
+        return True
     target = config.get("target", {})
-    if not isinstance(target, dict):
+    key = 'cfg(target_os = "linux")'
+    linux = target.get(key, {}) if isinstance(target, dict) else None
+    flags = linux.get("rustflags") if isinstance(linux, dict) else None
+    if not isinstance(flags, list) or not all(isinstance(f, str) for f in flags):
         return None
-    target_config = target.get('cfg(target_os = "linux")', {})
-    if not isinstance(target_config, dict):
-        return None
-    rustflags = target_config.get("rustflags")
-    if not isinstance(rustflags, list) or not all(
-        isinstance(flag, str) for flag in rustflags
-    ):
-        return None
-    return "-Zcodegen-backend=cranelift" in rustflags
+    return "-Zcodegen-backend=cranelift" in flags
 
 
 def _boolean_input(value: object) -> bool | None:

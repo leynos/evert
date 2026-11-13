@@ -18,6 +18,7 @@ RELEASE_TARGETS = (
     "x86_64-unknown-freebsd",
 )
 LLVM_ENV = {
+    "CARGO_PROFILE_DEV_CODEGEN_BACKEND": "llvm",
     "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": "clang",
     "RUSTFLAGS": "-C link-arg=-fuse-ld=lld",
     "CFLAGS": "-fuse-ld=lld",
@@ -304,11 +305,11 @@ def _release_route(documents: dict[str, Document]) -> list[str]:
     errors.extend(setup_errors)
     install = _named(ref, steps, "Install cross", errors)
     build = _named(ref, steps, "Build release binary", errors)
-    if setup is not None and not _has_input(setup[1], "toolchain", "stable"):
-        errors.append("release.yml must provision its stable shared Rust toolchain")
+    if setup is not None and _has_input(setup[1], "toolchain", "stable"):
+        errors.append("release.yml must build on the pinned nightly, not stable")
     errors.extend(_release_flag_errors(install, build))
     errors.extend(_release_command_errors(install, build))
-    rust_first = "must provision stable Rust before installing Cross"
+    rust_first = "must provision Rust before installing Cross"
     cross_first = "must install Cross before building release targets"
     errors.extend(
         _before(ref, ((setup, install, rust_first), (install, build, cross_first)))
@@ -382,7 +383,7 @@ def guide_errors(guide: str) -> list[str]:
             "unsupported boundary",
             "That cross-host development route is unsupported because",
         ),
-        ("Cross packaging", "stable Cross release workflow"),
+        ("Cross packaging", "Cross release workflow"),
     )
     return [
         f"developers' guide must document {label}"

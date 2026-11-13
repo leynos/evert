@@ -109,6 +109,11 @@ def test_make_graph_parser_consumes_injected_makefile_source() -> None:
             True,
             id="cranelift-default",
         ),
+        pytest.param(
+            {"profile": {"dev": {"codegen-backend": "cranelift"}}},
+            True,
+            id="dev-profile-cranelift",
+        ),
         pytest.param({"target": []}, None, id="unknown-shape"),
         pytest.param({}, None, id="missing-target"),
     ],
@@ -159,8 +164,8 @@ def test_action_order_violations_require_one_prior_action(
 
 def test_lint_job_violations_keep_cardinality_before_step_and_lint_errors() -> None:
     """Cardinality is first, followed by action and lint-step diagnostics."""
-    first_action: Step = {"uses": ACTION_USE, "with": {"cranelift": "false"}}
-    second_action: Step = {"uses": ACTION_USE, "with": {"cranelift": "false"}}
+    first_action: Step = {"uses": ACTION_USE, "with": {"cranelift": "true"}}
+    second_action: Step = {"uses": ACTION_USE, "with": {"cranelift": "true"}}
     lint_step: Step = {"run": "make lint", "if": False, "continue-on-error": True}
 
     violations = lint_job_action_violations(
@@ -169,7 +174,7 @@ def test_lint_job_violations_keep_cardinality_before_step_and_lint_errors() -> N
             job_steps=[first_action, second_action, lint_step],
             lint_indices=[2],
             route_name="make lint",
-            expected_cranelift=False,
+            expected_cranelift=True,
         ),
     )
 
@@ -183,7 +188,7 @@ def test_lint_job_violations_keep_cardinality_before_step_and_lint_errors() -> N
 def test_lint_job_violations_keep_action_lint_and_order_diagnostic_order() -> None:
     """Action checks precede lint checks, which precede the final order check."""
     lint_step: Step = {"run": "make lint", "if": False, "continue-on-error": True}
-    action: Step = {"uses": ACTION_USE, "if": False, "with": {"cranelift": "false"}}
+    action: Step = {"uses": ACTION_USE, "if": False, "with": {"cranelift": "true"}}
 
     violations = lint_job_action_violations(
         "ci.yml",
@@ -191,7 +196,7 @@ def test_lint_job_violations_keep_action_lint_and_order_diagnostic_order() -> No
             job_steps=[lint_step, action],
             lint_indices=[0],
             route_name="make lint",
-            expected_cranelift=False,
+            expected_cranelift=True,
         ),
     )
 

@@ -339,9 +339,10 @@ fn excluded_targets_expand_their_own_cargo_commands(
             .first()
             .expect("release must expose its Cargo invocation");
         assert!(
-            release_command.contains("probe-cargo +stable")
+            release_command.contains("probe-cargo build")
                 && release_command.contains("RUSTFLAGS=\"${RUSTFLAGS:+$RUSTFLAGS }"),
-            "release must select stable Rust and preserve caller compiler flags: {release_command}"
+            "release must use the pinned toolchain and preserve caller compiler flags: \
+             {release_command}"
         );
     }
 }

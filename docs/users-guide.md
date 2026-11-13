@@ -84,12 +84,9 @@ available. Use `make build` and `make test` for the standard development route.
 Before the first local build, run `make install-build-tools` to install the
 pinned Rust toolchain and linker tools for native Linux x86_64 and aarch64
 development routes. On supported Linux hosts, the development build
-(`make build`), tests (`make test`), lint, and typecheck use rustc's LLVM
+(`make build`), tests (`make test`), lint, and typecheck use rustc's Cranelift
 backend, the nightly `-Zthreads=8` frontend, and the pinned `mold` linker.
-Cranelift is not selected: the release build uses stable Cargo, which refuses a
-codegen-backend key in the shared configuration. See "Cranelift backend
-support" in the developers' guide and
-[issue #80](https://github.com/leynos/evert/issues/80).
+Release builds and coverage keep the LLVM backend; Whitaker runs on LLVM too.
 
 The Linux Cargo configuration requires the pinned `mold` binary and the
 `evert-clang-mold` wrapper. Run `make install-build-tools` before the first
@@ -101,12 +98,12 @@ and Windows keep their platform linkers.
 
 Coverage and release deliberately leave out the development flags while
 preserving caller-supplied `RUSTFLAGS`. `make coverage` uses Clang with `lld`
-for compatibility with coverage tooling. `make release` uses stable Rust and
-the platform linker; the release workflow uses the stable Cross route for its
-matrix targets. Install clang, python3, and cargo-audit before running the full
-local workflow on Linux; coverage also requires lld. The Python linters, the
-Python type check, and workflow contract tests use `uv`, which fetches CPython
-3.14 on demand. The [developers' guide](developers-guide.md) describes the
-backend and linker routing. The gates also use Whitaker, `markdownlint-cli2`,
-`mdtablefix`, and `nixie`, and coverage needs `cargo-llvm-cov`; cargo-nextest
-is optional.
+for compatibility with coverage tooling and selects the LLVM backend.
+`make release` uses the pinned nightly with LLVM and the platform linker; the
+release workflow uses the Cross route for its matrix targets. Install clang,
+python3, and cargo-audit before running the full local workflow on Linux;
+coverage also requires lld. The Python linters, the Python type check, and
+workflow contract tests use `uv`, which fetches CPython 3.14 on demand. The
+[developers' guide](developers-guide.md) describes the backend and linker
+routing. The gates also use Whitaker, `markdownlint-cli2`, `mdtablefix`, and
+`nixie`, and coverage needs `cargo-llvm-cov`; cargo-nextest is optional.

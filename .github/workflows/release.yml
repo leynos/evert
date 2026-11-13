@@ -48,7 +48,6 @@ jobs:
       - uses: leynos/shared-actions/.github/actions/setup-rust@2ddf19b3fd52c0f1089db0d57b015f859b80ab67
         with:
           expect-cache: any
-          toolchain: stable
       - name: Cache cross binary
         id: cache-cross
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -57,7 +56,7 @@ jobs:
           key: cross-${{ env.CROSS_REVISION }}
       - name: Install cross
         env:
-          # Stable rustc must not inherit the development backend or linker.
+          # Cargo must not inherit the development linker flags.
           RUSTFLAGS: ""
         run: |
           if [ -x "$HOME/.cargo/bin/cross" ]; then
@@ -74,14 +73,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.target }}-
       - name: Build release binary
-        # Use +stable to override rust-toolchain.toml's nightly pin and
-        # ensure release builds use stable, regardless of local dev tooling.
+        # Release builds use the pinned nightly from rust-toolchain.toml. The
+        # release profile keeps the LLVM backend; Cranelift is dev-only.
         env:
-          # RUSTFLAGS replaces the development backend, parallel frontend and
-          # `mold` flags in .cargo/config.toml; the command also removes any
-          # encoded flags before Cross invokes stable rustc in its container.
+          # RUSTFLAGS replaces the parallel frontend and `mold` flags in
+          # .cargo/config.toml; the command also removes any encoded flags
+          # before Cross invokes rustc in its container.
           RUSTFLAGS: ""
-        run: env -u CARGO_ENCODED_RUSTFLAGS cross +stable build --release --target ${{ matrix.target }}
+        run: env -u CARGO_ENCODED_RUSTFLAGS cross build --release --target ${{ matrix.target }}
       - name: Prepare artefact
         run: |
           mkdir -p artefacts/${{ matrix.os }}-${{ matrix.arch }}
