@@ -41,13 +41,13 @@ backend deferral. See `docs/evert-design.md` §§1-3 and
 - [ ] 1.1.2. Add ADRs for the MVP effect set and package manifest boundary.
   - Requires 1.1.1.
   - See `docs/evert-design.md` §§8 and 12,
-    `docs/adr-004-effect-interface-sealing-gate.md`, and
-    `docs/adr-005-capability-authority-staging.md`.
+    `docs/adrs/adr-0004-effect-interface-sealing-gate.md`, and
+    `docs/adrs/adr-0005-capability-authority-staging.md`.
   - Success: the first semantic slice knows that `Throw<E>` and `Console` are
     executable, `Clock` is staged, and the manifest fields it must parse and
     check are documented.
 - [ ] 1.1.3. Decide the first crate set and workspace metadata.
-  - Requires 1.1.1 and `docs/adr-001-query-based-compiler-workspace.md`.
+  - Requires 1.1.1 and `docs/adrs/adr-0001-query-based-compiler-workspace.md`.
   - Create only crates needed by phases 2 and 3.
   - Success: workspace boundaries match implemented responsibilities, not empty
     architectural placeholders.
@@ -196,7 +196,7 @@ can coexist in the MVP. See `docs/evert-design.md` §8.
 - [ ] 3.2.6. Add a design checkpoint for effect-interface sealing.
   - Requires 3.2.2.
   - See `docs/evert-design.md` §8 and
-    `docs/adr-004-effect-interface-sealing-gate.md`.
+    `docs/adrs/adr-0004-effect-interface-sealing-gate.md`.
   - Success: row-polymorphic fixtures either demonstrate that the current
     effect-interface model is safe enough for the next slice or open a
     follow-up ADR for signature restriction.
@@ -259,7 +259,7 @@ ambient. See `docs/evert-design.md` §§8-10.
 
 - [ ] 4.3.1. Implement basic `Throw<E>` and `Console` handlers.
   - Requires 4.2.1, 3.2.2, and 3.2.6.
-  - See `docs/adr-004-effect-interface-sealing-gate.md`; the 3.2.6
+  - See `docs/adrs/adr-0004-effect-interface-sealing-gate.md`; the 3.2.6
     sealing-gate decision is recorded before handler implementation starts.
   - Success: direct-style effect examples execute through handlers and
     unhandled effects remain visible in the effect row, and `Console` output
@@ -340,7 +340,7 @@ earlier only through an ADR or RFC that explains the new dependency.
 
 - [ ] 6.1.1. Pin the LLVM major version and Inkwell feature in an ADR.
   - Requires phase 4.
-  - See `docs/adr-002-interpreter-first-backend-boundary.md`.
+  - See `docs/adrs/adr-0002-interpreter-first-backend-boundary.md`.
   - Success: local and CI installation expectations are explicit.
 - [ ] 6.1.2. Implement textual LLVM IR golden generation.
   - Requires 6.1.1 and phase 4.
@@ -355,7 +355,7 @@ earlier only through an ADR or RFC that explains the new dependency.
 - [ ] 6.2.1. Accept an RFC for nurseries, task cancellation, and `Task<T, E>`.
   - Requires phase 4.
   - See `docs/evert-design.md` §§8 and 16 and
-    `docs/adr-005-capability-authority-staging.md`.
+    `docs/adrs/adr-0005-capability-authority-staging.md`.
   - Success: the RFC states static capture rules, cancellation propagation,
     and interpreter/runtime staging, and those task-scope capture rules are
     the shared treatment that 6.3.2 relies on for capability authority.
@@ -377,7 +377,7 @@ earlier only through an ADR or RFC that explains the new dependency.
 - [ ] 6.3.2. Accept an RFC for capability values, `Clock`, and
   handler-provided authority.
   - Requires phase 4 and 6.2.1.
-  - See `docs/adr-005-capability-authority-staging.md`.
+  - See `docs/adrs/adr-0005-capability-authority-staging.md`.
   - Success: filesystem, network, clock, and unsafe authority cannot be
     performed by naming a type alone; the RFC specifies how authority is
     captured by task scopes (using the 6.2.1 capture rules), how it

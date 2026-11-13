@@ -4,11 +4,11 @@
 - **Audience:** Product sponsors, language designers, compiler implementers,
   tool authors, and reviewers evaluating Evert's scope.
 - **Companion documents:** `docs/context.md`, `docs/evert-design.md`,
-  `docs/roadmap.md`, `docs/adr-001-query-based-compiler-workspace.md`,
-  `docs/adr-002-interpreter-first-backend-boundary.md`, and
-  `docs/adr-003-local-power-language-semantics.md`,
-  `docs/adr-004-effect-interface-sealing-gate.md`, and
-  `docs/adr-005-capability-authority-staging.md`.
+  `docs/roadmap.md`, `docs/adrs/adr-0001-query-based-compiler-workspace.md`,
+  `docs/adrs/adr-0002-interpreter-first-backend-boundary.md`, and
+  `docs/adrs/adr-0003-local-power-language-semantics.md`,
+  `docs/adrs/adr-0004-effect-interface-sealing-gate.md`, and
+  `docs/adrs/adr-0005-capability-authority-staging.md`.
 - **Last substantive revision:** 2026-06-27.
 
 ## 1. Background and motivation

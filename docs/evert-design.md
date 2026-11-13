@@ -7,11 +7,11 @@
 - **Audience:** Compiler implementers, language designers, reviewers, and
   tooling authors.
 - **Companion documents:** `docs/context.md`, `docs/terms-of-reference.md`,
-  `docs/roadmap.md`, `docs/adr-001-query-based-compiler-workspace.md`,
-  `docs/adr-002-interpreter-first-backend-boundary.md`,
-  `docs/adr-003-local-power-language-semantics.md`,
-  `docs/adr-004-effect-interface-sealing-gate.md`,
-  `docs/adr-005-capability-authority-staging.md`,
+  `docs/roadmap.md`, `docs/adrs/adr-0001-query-based-compiler-workspace.md`,
+  `docs/adrs/adr-0002-interpreter-first-backend-boundary.md`,
+  `docs/adrs/adr-0003-local-power-language-semantics.md`,
+  `docs/adrs/adr-0004-effect-interface-sealing-gate.md`,
+  `docs/adrs/adr-0005-capability-authority-staging.md`,
   `docs/references/inciting-incident.md`, and `docs/references/evert-plan.md`.
 - **Last substantive revision:** 2026-06-27.
 
