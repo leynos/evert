@@ -99,10 +99,11 @@ def _is_setup_rust(step: Step) -> bool:
     return uses.casefold() == SETUP_RUST.casefold()
 
 
-def _has_input(step: Step, key: str, value: str) -> bool:
-    """Report whether the step's `with` mapping sets `key` to `value`."""
+def _has_input(step: Step, key: str, value: str | None = None) -> bool:
+    """Report whether `with` sets `key` (to `value`, when one is given)."""
     inputs = step.get("with")
-    return isinstance(inputs, dict) and inputs.get(key) == value
+    found = isinstance(inputs, dict) and key in inputs
+    return found and (value is None or inputs.get(key) == value)
 
 
 def _setup_errors(ref: _JobRef, setup: Found) -> list[str]:
@@ -305,8 +306,8 @@ def _release_route(documents: dict[str, Document]) -> list[str]:
     errors.extend(setup_errors)
     install = _named(ref, steps, "Install cross", errors)
     build = _named(ref, steps, "Build release binary", errors)
-    if setup is not None and _has_input(setup[1], "toolchain", "stable"):
-        errors.append("release.yml must build on the pinned nightly, not stable")
+    if setup is not None and _has_input(setup[1], "toolchain"):
+        errors.append("release.yml must build on the pinned toolchain, not a named one")
     errors.extend(_release_flag_errors(install, build))
     errors.extend(_release_command_errors(install, build))
     rust_first = "must provision Rust before installing Cross"
