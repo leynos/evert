@@ -204,7 +204,7 @@ def test_new_linux_composite_lint_job_accepts_prior_action() -> None:
     mapping_at(documents, "ci.yml", "jobs")["future-composite-lint"] = {
         "runs-on": "ubuntu-latest",
         "steps": [
-            {"uses": ACTION_USE, "with": {"cranelift": "false"}},
+            {"uses": ACTION_USE, "with": {"cranelift": "true"}},
             {"run": "make all"},
         ],
     }
@@ -219,7 +219,7 @@ def test_new_linux_lint_job_with_job_level_soft_fail_is_rejected() -> None:
         "runs-on": "ubuntu-latest",
         "continue-on-error": True,
         "steps": [
-            {"uses": ACTION_USE, "with": {"cranelift": "false"}},
+            {"uses": ACTION_USE, "with": {"cranelift": "true"}},
             {"run": "make lint"},
         ],
     }

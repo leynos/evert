@@ -9,3 +9,9 @@ rustflags = ["-Zthreads=8", "-Clinker=evert-clang-mold", "-Clink-arg=-fuse-ld=mo
 # Never use raw rustc metadata flags; they broke build scripts.
 [unstable]
 embed-metadata = false
+codegen-backend = true
+
+# Cranelift is the development default. Only the dev profile selects it, so
+# release builds keep LLVM; coverage and Whitaker select LLVM explicitly.
+[profile.dev]
+codegen-backend = "cranelift"

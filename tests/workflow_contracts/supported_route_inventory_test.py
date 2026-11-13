@@ -148,7 +148,11 @@ def test_new_routes_and_reusable_calls_fail_closed(
 @pytest.mark.parametrize(
     ("mutation", "expected"),
     [
-        pytest.param("unstable-cross", "cross +stable", id="stable-cross-removed"),
+        pytest.param(
+            "stable-cross",
+            "must build every matrix target with cross",
+            id="stable-cross-added",
+        ),
         pytest.param("release-rustflags", "RUSTFLAGS", id="release-flags-not-empty"),
         pytest.param(
             "install-rustflags", "RUSTFLAGS", id="cross-install-flags-not-empty"
@@ -164,8 +168,10 @@ def test_release_route_mutations_are_rejected(mutation: str, expected: str) -> N
     install = next(step for step in steps if step.get("name") == "Install cross")
     build = next(step for step in steps if step.get("name") == "Build release binary")
     match mutation:
-        case "unstable-cross":
-            build["run"] = str(build["run"]).replace("cross +stable", "cross")
+        case "stable-cross":
+            build["run"] = str(build["run"]).replace(
+                "cross build", "cross +stable build"
+            )
         case "release-rustflags":
             build["env"] = {}
         case "install-rustflags":
@@ -196,7 +202,7 @@ def test_missing_release_steps_skip_their_command_checks() -> None:
         1,
         {
             "run": (
-                "env -u CARGO_ENCODED_RUSTFLAGS cross +stable build --release "
+                "env -u CARGO_ENCODED_RUSTFLAGS cross build --release "
                 "--target ${{ matrix.target }}"
             )
         },
@@ -227,7 +233,7 @@ def test_release_commands_allow_whitespace_and_install_script_context() -> None:
         {
             "run": (
                 "  env -u CARGO_ENCODED_RUSTFLAGS\n"
-                "cross +stable build --release --target ${{ matrix.target }}  "
+                "cross build --release --target ${{ matrix.target }}  "
             )
         },
     )
@@ -252,7 +258,7 @@ def test_prefixed_wrong_release_command_reports_only_target_mismatch() -> None:
         {"run": "env -u CARGO_ENCODED_RUSTFLAGS cross build --release"},
     )
     assert _release_command_errors(None, build) == [
-        "release.yml must build every matrix target with cross +stable"
+        "release.yml must build every matrix target with cross"
     ], "correct prefix with wrong build command must report only target mismatch"
 
 
@@ -261,7 +267,7 @@ def test_unprefixed_wrong_release_command_reports_both_errors_in_order() -> None
     build: tuple[int, Step] = (1, {"run": "cross build --release"})
     assert _release_command_errors(None, build) == [
         "release.yml Build release binary must clear encoded flags",
-        "release.yml must build every matrix target with cross +stable",
+        "release.yml must build every matrix target with cross",
     ], "unprefixed build must report both independent diagnostics"
 
 
@@ -272,5 +278,5 @@ def test_install_diagnostic_precedes_both_build_diagnostics() -> None:
     assert _release_command_errors(install, build) == [
         "release.yml Install cross must clear encoded flags",
         "release.yml Build release binary must clear encoded flags",
-        "release.yml must build every matrix target with cross +stable",
+        "release.yml must build every matrix target with cross",
     ], "installation error must precede both build command errors"

@@ -73,7 +73,7 @@ jobs:
       - name: Install Whitaker
         uses: leynos/shared-actions/.github/actions/install-whitaker@0eabb6bc07148981de5da395e30cd78d83f5c7c2
         with:
-          cranelift: 'false'
+          cranelift: true
       - name: Audit dependencies
         if: github.actor != 'dependabot[bot]'
         run: make audit
@@ -103,6 +103,8 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: leynos/shared-actions/.github/actions/generate-coverage@2ddf19b3fd52c0f1089db0d57b015f859b80ab67
         env:
+          # Coverage instrumentation is LLVM-only (BD-007).
+          CARGO_PROFILE_DEV_CODEGEN_BACKEND: llvm
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
           RUSTFLAGS: -C link-arg=-fuse-ld=lld
           CFLAGS: -fuse-ld=lld

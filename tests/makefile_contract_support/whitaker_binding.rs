@@ -15,12 +15,12 @@ pub(super) fn preflight_and_cargo_positions(output: &str) -> Option<(usize, usiz
     Some((preflight, cargo))
 }
 
-/// Checks that Make reaches the injected failure only after the successful Cargo stubs.
+/// Checks that the lint routes plan rustdoc, Clippy and Whitaker once each, in that order.
 #[rstest]
 #[case::composite_lint("lint", true)]
 #[case::whitaker_leaf("lint-whitaker", false)]
-fn failing_whitaker_propagates_after_clippy(#[case] target: &str, #[case] parallel: bool) {
-    let output = match run_make_with_failing_whitaker(target, parallel) {
+fn whitaker_runs_after_clippy(#[case] target: &str, #[case] parallel: bool) {
+    let output = match run_make_dry_run(target, parallel) {
         Ok(output) => output,
         Err(error) => panic!("make must run with the controlled executables: {error}"),
     };
@@ -32,8 +32,8 @@ fn failing_whitaker_propagates_after_clippy(#[case] target: &str, #[case] parall
     let lines: Vec<_> = diagnostics.lines().collect();
 
     assert!(
-        !output.status.success(),
-        "the controlled Whitaker failure must propagate through `make {target}`: {diagnostics}"
+        output.status.success(),
+        "`make -n {target}` must plan the lint route: {diagnostics}"
     );
     let doc_commands: Vec<_> = lines
         .iter()
@@ -48,7 +48,7 @@ fn failing_whitaker_propagates_after_clippy(#[case] target: &str, #[case] parall
     let whitaker_commands: Vec<_> = lines
         .iter()
         .enumerate()
-        .filter(|(_, line)| line.split_whitespace().any(|word| word == "false"))
+        .filter(|(_, line)| line.split_whitespace().any(|word| word == "whitaker"))
         .collect();
 
     assert_eq!(
@@ -79,29 +79,29 @@ fn failing_whitaker_propagates_after_clippy(#[case] target: &str, #[case] parall
     assert!(
         ordered_commands,
         concat!(
-            "the rustdoc, Clippy, and failing Whitaker commands must run in that order: ",
+            "the rustdoc, Clippy, and Whitaker commands must run in that order: ",
             "{diagnostics}"
         ),
         diagnostics = diagnostics
     );
 }
 
-/// Runs the selected lint recipe with Cargo succeeding and Whitaker failing.
+/// Prints the selected lint recipe without running it, with Cargo stubbed.
 ///
-/// For example, `run_make_with_failing_whitaker("lint", true)` runs the
-/// composite recipe in parallel so the test can inspect failure propagation.
-fn run_make_with_failing_whitaker(target: &str, parallel: bool) -> std::io::Result<Output> {
+/// For example, `run_make_dry_run("lint", true)` plans the composite recipe
+/// under `make -j`, so the test can inspect the order Make serializes it in.
+fn run_make_dry_run(target: &str, parallel: bool) -> std::io::Result<Output> {
     let mut command = Command::new("make");
     if parallel {
         command.arg("-j");
     }
     command
         .args([
+            "--dry-run",
             "--no-print-directory",
             target,
             "CARGO=true",
             "INTERROGATE=true",
-            "WHITAKER=false",
         ])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()

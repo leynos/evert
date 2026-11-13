@@ -33,8 +33,6 @@ MDTABLEFIX ?= mdtablefix
 MDTABLEFIX_SELECT = --git --include-untracked
 MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 NIXIE ?= nixie
-WHITAKER ?= whitaker
-WHITAKER_PACKAGES ?= --all
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 
@@ -132,11 +130,12 @@ TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --managed-python \
 
 # The development build standard (concordat rule `rust-build-defaults`):
 # On a supported GNU/Linux host, parallel rustc and `mold` apply to the
-# matching native x86_64 or aarch64 target; rustc uses its LLVM backend.
+# matching native x86_64 or aarch64 target; rustc uses Cranelift for development.
 # Route each Cargo command by its effective target. A sole exact native
 # --target takes precedence; commands without it follow CARGO_BUILD_TARGET.
 # Assigned RUSTFLAGS replace Cargo's target table, so each route restates the
-# standard flags. Coverage and release retain their explicit LLVM routes.
+# standard flags. The development profile selects Cranelift through
+# .cargo/config.toml; coverage, release and Whitaker select LLVM explicitly.
 BUILD_HOST_OS := $(shell uname -s)
 BUILD_HOST_ARCH := $(shell uname -m)
 NATIVE_CARGO_TARGET := $(if $(filter x86_64 aarch64,$(BUILD_HOST_ARCH)),$(BUILD_HOST_ARCH)-unknown-linux-gnu,)
@@ -225,12 +224,13 @@ test-workflow-contracts: ## Validate the shared and local workflow contracts
 target/debug/$(TARGET): | check-build-tools ## Build the development binary
 	$(BASE_GATE_RUSTFLAGS) $(CARGO) build $(BUILD_JOBS) --bin $(TARGET)
 
-target/release/$(TARGET): ## Build the release binary with stable Rust and LLVM
-	$(RELEASE_RUSTFLAGS) $(CARGO) +stable build $(BUILD_JOBS) --release --bin $(TARGET)
+target/release/$(TARGET): ## Build the release binary with LLVM
+	$(RELEASE_RUSTFLAGS) $(CARGO) build $(BUILD_JOBS) --release --bin $(TARGET)
 
 coverage: ## Generate lcov coverage with lld for llvm-tools compatibility
 	@echo "coverage linker flags: $(COVERAGE_LINKER_FLAGS)"
-	$(COVERAGE_ENV) CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang \
+	$(COVERAGE_ENV) CARGO_PROFILE_DEV_CODEGEN_BACKEND=llvm CARGO_PROFILE_TEST_CODEGEN_BACKEND=llvm \
+		CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang \
 		RUSTFLAGS="$${RUSTFLAGS:+$$RUSTFLAGS }$(COVERAGE_RUST_FLAGS)" \
 		CFLAGS="$(COVERAGE_LINKER_FLAGS)" \
 		LDFLAGS="$(COVERAGE_LINKER_FLAGS)" \
@@ -253,7 +253,7 @@ lint: interrogate lint-clippy lint-whitaker lint-python ## Run docstring, Rust, 
 # Keep Whitaker on the Clippy route's explicit prerequisite edge so `make -j`
 # cannot overlap the two compiler gates.
 lint-whitaker: lint-clippy
-	unset CARGO_ENCODED_RUSTFLAGS; RUSTFLAGS="-D warnings" $(WHITAKER) $(WHITAKER_PACKAGES) -- $(CARGO_FLAGS)
+	unset CARGO_ENCODED_RUSTFLAGS; CARGO_UNSTABLE_CODEGEN_BACKEND=true CARGO_PROFILE_DEV_CODEGEN_BACKEND=llvm RUSTFLAGS="-D warnings" whitaker --all -- $(CARGO_FLAGS)
 
 # Python lints run last, after the Rust compiler gates, and need no Rust
 # toolchain. Their commands share the repository source inventory; Interrogate

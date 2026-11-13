@@ -1,4 +1,4 @@
-"""Validate the exact stable Cross command used by the release route."""
+"""Validate the exact Cross command used by the release route."""
 
 
 def _release_build_command_errors(
@@ -24,8 +24,8 @@ def _release_build_command_errors(
     if not command.startswith(cleared):
         errors.append("release.yml Build release binary must clear encoded flags")
     expected = (
-        f"{cleared}cross +stable build --release --target ${{{{ matrix.target }}}}"
+        f"{cleared}cross build --release --target ${{{{ matrix.target }}}}"
     )
     if command != expected:
-        errors.append("release.yml must build every matrix target with cross +stable")
+        errors.append("release.yml must build every matrix target with cross")
     return errors

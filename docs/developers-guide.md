@@ -447,7 +447,7 @@ recipes that set it compose the standard's flags onto any inherited value (CI's
 `setup-rust` exports one). Coverage and release preserve caller-supplied
 `RUSTFLAGS` while omitting the development flags; coverage adds its own `lld`
 route. A direct `cargo build --release` still takes the configuration's flags,
-so use `make release` for the stable route.
+so use `make release` for the release route.
 
 On Linux, install `mold` before building: the configuration names it, so a
 build without it fails at link time. CI installs it through `setup-rust`'s
@@ -464,9 +464,9 @@ must inspect the real target expansions.
 Keep build-contract readers within their owning test modules. In
 `build_standard_support/config.rs`, `Pin` owns channel parsing and calls only
 its private channel-classification helpers. Make-output folding and Cargo
-command recognition stay in `makefile_contract.rs`; stable release-command
-discovery and flag-policy checks stay in `build_backend_contract.rs`. Shell
-wrapper and quoted `RUSTFLAGS` parsing remain in
+command recognition stay in `makefile_contract.rs`; development-flag scoping
+and the release route's flag isolation stay in `build_backend_contract.rs`.
+Shell wrapper and quoted `RUSTFLAGS` parsing remain in
 `build_standard_support/make.rs`. Keep the parameterized cross-route
 linker-argument regression with its caller-flag contract in
 `makefile_contract_support/cross_caller_flags.rs`. These readers and regression
@@ -513,36 +513,28 @@ isolation boundary rather than as a gate build that lost the fast flags.
 
 ### Cranelift backend support
 
-Cranelift is excluded from the development defaults and pinned toolchain
-components. The `catch_unwind` and joined-thread probes recorded on 2026-09-29
-(see the superseded debugging plan in `docs/debugging/`) were removed on
-2026-11-13: they checked the toolchain, not the product.
+Cranelift is the development backend, selected by `[profile.dev]` in
+`.cargo/config.toml` (with `[unstable] codegen-backend = true`) and installed
+through the `rustc-codegen-cranelift-preview` component in
+`rust-toolchain.toml`. The full suite passes under it, measured on
+`nightly-2026-11-12` on 2026-11-13 with
+`cargo nextest run --workspace --all-targets --all-features --no-fail-fast`
+and, for the doctest, `cargo test --doc --workspace --all-features`: all tests
+passed.
 
-Measured on 2026-11-13 on the pinned `nightly-2026-11-12`, same commit:
+Everything else selects LLVM. The release profile never reads the dev key, and
+`make release` and the release workflow build on the pinned nightly, so they
+keep LLVM. `make coverage` and the coverage workflows set
+`CARGO_PROFILE_DEV_CODEGEN_BACKEND=llvm` because `-Cinstrument-coverage` is
+LLVM-only. `make lint-whitaker` runs the installer-managed `whitaker` with
+`CARGO_PROFILE_DEV_CODEGEN_BACKEND=llvm`, and CI installs Whitaker with
+`cranelift: true`.
 
-- Under LLVM, with no backend variables set,
-  `cargo nextest run --workspace --all-targets --all-features --no-fail-fast`
-  ran 201 tests and all passed. The doctest, run separately with
-  `cargo test --doc --workspace --all-features`, passed.
-- Under Cranelift, the same two commands with
-  `CARGO_UNSTABLE_CODEGEN_BACKEND=true`,
-  `CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift` and
-  `CARGO_PROFILE_TEST_CODEGEN_BACKEND=cranelift` passed 200 of 201 tests and
-  the doctest. No test needs a panic to unwind.
-
-The one failure is
-`stable_cargo_config::stable_cargo_accepts_configuration_with_release_flag_overrides`.
-That probe runs stable Cargo, clears only the `RUSTFLAGS` variables, and so
-inherits the `CARGO_PROFILE_*_CODEGEN_BACKEND` variables from the Cranelift
-run; stable Cargo refuses them (`config profile dev is not valid`). Today
-`.cargo/config.toml` names no backend, so this is the measurement's own
-environment, not a defect in the repository. It does show the adoption
-obstacle: release builds run `cross +stable build --release`, and stable Cargo
-refuses a codegen-backend profile key, so a Cranelift default in
-`.cargo/config.toml` needs the release route to move to the pinned nightly
-first (release builds keep LLVM). That is a change to the release workflow, and
-the [tracking issue #80](https://github.com/leynos/evert/issues/80) stays open
-for it.
+The Cranelift component does not unwind, so a test must not rely on a caught
+panic: assert on a returned error instead. The earlier `catch_unwind` and
+joined-thread probes were removed on 2026-11-13 (see the superseded plan in
+`docs/debugging/`); they checked the toolchain, not the product. The
+[tracking issue #80](https://github.com/leynos/evert/issues/80) can close.
 
 ## Tooling
 
@@ -565,7 +557,7 @@ this LLVM and pinned-linker route. Cargo's target table also applies to direct
 cross builds to Linux targets from another host. That cross-host development
 route is unsupported because the linker wrapper and pinned `mold` installation
 target the Linux build host. Use a supported Linux host for development builds;
-the stable Cross release workflow handles explicit release targets.
+the Cross release workflow handles explicit release targets.
 
 ## Design workflow
 
