@@ -31,18 +31,18 @@ set.
 
 ## Architecture decisions
 
-- [ADR 001: Query-based compiler workspace](adr-001-query-based-compiler-workspace.md)
+- [ADR 001: Query-based compiler workspace](adrs/adr-0001-query-based-compiler-workspace.md)
   selects a layered Rust workspace coordinated by a Salsa query database.
-- [ADR 002: Interpreter-first backend boundary](adr-002-interpreter-first-backend-boundary.md)
+- [ADR 002: Interpreter-first backend boundary](adrs/adr-0002-interpreter-first-backend-boundary.md)
   defers native code generation behind a backend port until the interpreter is
   a working semantic oracle.
-- [ADR 003: Local-power language semantics](adr-003-local-power-language-semantics.md)
+- [ADR 003: Local-power language semantics](adrs/adr-0003-local-power-language-semantics.md)
   records the initial semantic rule that power must be local, explicit, and
   non-contagious.
-- [ADR 004: Effect-interface sealing gate](adr-004-effect-interface-sealing-gate.md)
+- [ADR 004: Effect-interface sealing gate](adrs/adr-0004-effect-interface-sealing-gate.md)
   makes signature restriction or effect-interface sealing an early design gate
   before effect polymorphism broadens.
-- [ADR 005: Capability authority staging](adr-005-capability-authority-staging.md)
+- [ADR 005: Capability authority staging](adrs/adr-0005-capability-authority-staging.md)
   splits resource values from authority capabilities and stages host authority
   after the first effect slice.
 

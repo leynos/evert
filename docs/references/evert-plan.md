@@ -1042,9 +1042,9 @@ of the tree.
   `Functor`/`Monad` traits and `do` notation (FR-10); algebraic effects with
   resumable handlers (FR-11) for the MVP effect set of `Throw<E>` and `Console`;
   `Clock` stays staged until capability-authority conformance fixtures exist
-  (see docs/adr-004-effect-interface-sealing-gate.md and
-  docs/adr-005-capability-authority-staging.md); and `mutate` regions with
-  escape checking (FR-12).
+  (see docs/adrs/adr-0004-effect-interface-sealing-gate.md and
+  docs/adrs/adr-0005-capability-authority-staging.md); and `mutate` regions
+  with escape checking (FR-12).
 - **Runtime**: immutable values, thunks, real Unicode `Text`,
   capability-mediated I/O, and a non-moving reference-counted heap (FR-15).
   This is the designated MVP heap model; see the "Advanced garbage collection"

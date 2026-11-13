@@ -25,11 +25,11 @@ compact and omits build output such as `target/`.
 │       ├── mutation-testing.yml
 │       └── release.yml
 ├── docs/
-│   ├── adr-001-query-based-compiler-workspace.md
-│   ├── adr-002-interpreter-first-backend-boundary.md
-│   ├── adr-003-local-power-language-semantics.md
-│   ├── adr-004-effect-interface-sealing-gate.md
-│   ├── adr-005-capability-authority-staging.md
+│   ├── adrs/adr-0001-query-based-compiler-workspace.md
+│   ├── adrs/adr-0002-interpreter-first-backend-boundary.md
+│   ├── adrs/adr-0003-local-power-language-semantics.md
+│   ├── adrs/adr-0004-effect-interface-sealing-gate.md
+│   ├── adrs/adr-0005-capability-authority-staging.md
 │   ├── contents.md
 │   ├── context.md
 │   ├── debugging/

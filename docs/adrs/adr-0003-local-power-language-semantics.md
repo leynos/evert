@@ -80,8 +80,8 @@ Adopt the local-power rule as a semantic invariant:
 
 - `docs/context.md`.
 - `docs/terms-of-reference.md`.
-- `docs/adr-004-effect-interface-sealing-gate.md`.
-- `docs/adr-005-capability-authority-staging.md`.
+- `docs/adrs/adr-0004-effect-interface-sealing-gate.md`.
+- `docs/adrs/adr-0005-capability-authority-staging.md`.
 - Daan Leijen, "Koka: Programming with Row Polymorphic Effect Types",
   <https://arxiv.org/abs/1406.2061>.
 - Daan Leijen, "Algebraic Effects for Functional Programming",
