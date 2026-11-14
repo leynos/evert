@@ -4,7 +4,7 @@ import dataclasses
 import re
 import typing as typ
 
-from whitaker_cranelift_input import cranelift_input_violation
+from whitaker_cranelift_input import cranelift_input_violations
 from workflow_contract_support import calls, continues_on_error, steps
 
 if typ.TYPE_CHECKING:
@@ -263,12 +263,10 @@ def _action_input_violations(
         f"{where} Whitaker action must not set {forbidden}"
         for forbidden in sorted(FORBIDDEN_INPUTS.intersection(inputs))
     ]
-    violation = cranelift_input_violation(
-        inputs, expected_cranelift=expected_cranelift
-    )
-    if violation:
-        violations.append(violation)
-    return violations
+    return [
+        *violations,
+        *cranelift_input_violations(inputs, expected_cranelift=expected_cranelift),
+    ]
 
 
 def _action_step_violations(

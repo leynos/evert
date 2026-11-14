@@ -12,20 +12,21 @@ def _boolean_input(value: object) -> bool | None:
             return None
 
 
-def cranelift_input_violation(
+def cranelift_input_violations(
     inputs: dict[object, object], *, expected_cranelift: bool | None
-) -> str | None:
-    """Find the complaint about the `cranelift` input, if any."""
+) -> list[str]:
+    """List the complaints about the `cranelift` input, if any."""
     # The input must be true while the development default selects Cranelift;
     # once Cranelift is an opt-in it is optional, but must still be a boolean.
     if expected_cranelift is None:
-        return "cannot determine the Linux development Cranelift default"
+        return ["cannot determine the Linux development Cranelift default"]
     selected = _boolean_input(inputs.get("cranelift", False))
     if selected is None:
-        return "Whitaker action cranelift input must be a boolean"
+        return ["Whitaker action cranelift input must be a boolean"]
     if expected_cranelift and not selected:
-        return (
+        message = (
             "Whitaker action cranelift input must be true while the Linux "
             "development default selects Cranelift"
         )
-    return None
+        return [message]
+    return []
