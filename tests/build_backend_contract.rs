@@ -56,7 +56,7 @@ fn development_flags_are_scoped_to_every_linux_target() {
     }
     assert!(
         tables_with_rustflag(CARGO_CONFIG, "-Zcodegen-backend=cranelift").is_empty(),
-        "the backend is chosen by the dev profile key, not by a rustflags entry"
+        "the backend defaults to LLVM, and an opt-in uses the dev profile key, not a rustflags entry"
     );
 }
 

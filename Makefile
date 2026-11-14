@@ -135,7 +135,8 @@ TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --managed-python \
 # --target takes precedence; commands without it follow CARGO_BUILD_TARGET.
 # Assigned RUSTFLAGS replace Cargo's target table, so each route restates the
 # standard flags. The Cranelift selection in .cargo/config.toml is disabled;
-# coverage, release and Whitaker select LLVM explicitly.
+# release takes the LLVM default, and coverage and Whitaker select LLVM
+# explicitly.
 BUILD_HOST_OS := $(shell uname -s)
 BUILD_HOST_ARCH := $(shell uname -m)
 NATIVE_CARGO_TARGET := $(if $(filter x86_64 aarch64,$(BUILD_HOST_ARCH)),$(BUILD_HOST_ARCH)-unknown-linux-gnu,)
