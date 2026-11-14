@@ -134,10 +134,12 @@ def test_cranelift_selection_uses_parsed_configuration(
         pytest.param(False, "true", False, id="opt-in-component-kept"),
         pytest.param(False, "false", False, id="opt-in-component-dropped"),
         pytest.param(False, None, False, id="input-absent-without-selection"),
+        pytest.param(False, "maybe", True, id="input-is-not-a-boolean"),
+        pytest.param(None, "true", True, id="default-cannot-be-determined"),
     ],
 )
 def test_cranelift_input_is_required_only_while_cranelift_is_selected(
-    *, expected_cranelift: bool, cranelift_input: str | None, violated: bool
+    *, expected_cranelift: bool | None, cranelift_input: str | None, violated: bool
 ) -> None:
     """Require the input only while selected; it is optional once opt-in."""
     inputs = {} if cranelift_input is None else {"cranelift": cranelift_input}

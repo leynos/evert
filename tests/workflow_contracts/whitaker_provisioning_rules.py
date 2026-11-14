@@ -4,6 +4,7 @@ import dataclasses
 import re
 import typing as typ
 
+from whitaker_cranelift_input import cranelift_input_violation
 from workflow_contract_support import calls, continues_on_error, steps
 
 if typ.TYPE_CHECKING:
@@ -251,17 +252,6 @@ def development_cranelift_default(config: object) -> bool | None:
     return "-Zcodegen-backend=cranelift" in flags
 
 
-def _boolean_input(value: object) -> bool | None:
-    """Read YAML booleans and quoted GitHub action boolean inputs."""
-    match value:
-        case bool():
-            return value
-        case str():
-            return {"true": True, "false": False}.get(value.casefold())
-        case _:
-            return None
-
-
 def _action_input_violations(
     where: str,
     inputs: dict[object, object],
@@ -273,16 +263,11 @@ def _action_input_violations(
         f"{where} Whitaker action must not set {forbidden}"
         for forbidden in sorted(FORBIDDEN_INPUTS.intersection(inputs))
     ]
-    selected = _boolean_input(inputs.get("cranelift", False))
-    if expected_cranelift is None:
-        violations.append("cannot determine the Linux development Cranelift default")
-    elif expected_cranelift and selected is not True:
-        violations.append(
-            "Whitaker action cranelift input must be true while the Linux "
-            "development default selects Cranelift"
-        )
-    elif selected is None:
-        violations.append("Whitaker action cranelift input must be a boolean")
+    violation = cranelift_input_violation(
+        inputs, expected_cranelift=expected_cranelift
+    )
+    if violation:
+        violations.append(violation)
     return violations
 
 
