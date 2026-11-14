@@ -74,7 +74,7 @@ jobs:
             ${{ runner.os }}-cargo-${{ matrix.target }}-
       - name: Build release binary
         # Release builds use the pinned nightly from rust-toolchain.toml. The
-        # release profile keeps the LLVM backend; Cranelift is dev-only.
+        # release profile keeps the LLVM backend, the estate standard.
         env:
           # RUSTFLAGS replaces the parallel frontend and `mold` flags in
           # .cargo/config.toml; the command also removes any encoded flags

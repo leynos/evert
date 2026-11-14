@@ -4,6 +4,7 @@ import dataclasses
 import re
 import typing as typ
 
+from whitaker_cranelift_input import cranelift_input_violations
 from workflow_contract_support import calls, continues_on_error, steps
 
 if typ.TYPE_CHECKING:
@@ -268,19 +269,18 @@ def _action_input_violations(
     *,
     expected_cranelift: bool | None,
 ) -> list[str]:
-    """Reject forbidden action inputs and a Cranelift choice that drifts."""
+    """Reject forbidden action inputs and a missing Cranelift component."""
     violations = [
         f"{where} Whitaker action must not set {forbidden}"
         for forbidden in sorted(FORBIDDEN_INPUTS.intersection(inputs))
     ]
     selected = _boolean_input(inputs.get("cranelift", False))
-    if expected_cranelift is None:
-        violations.append("cannot determine the Linux development Cranelift default")
-    elif selected is not expected_cranelift:
-        violations.append(
-            "Whitaker action cranelift input must match the Linux development default"
-        )
-    return violations
+    return [
+        *violations,
+        *cranelift_input_violations(
+            selected=selected, expected_cranelift=expected_cranelift
+        ),
+    ]
 
 
 def _action_step_violations(

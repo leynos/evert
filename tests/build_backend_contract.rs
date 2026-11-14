@@ -1,7 +1,7 @@
 //! Checks how the repository selects its development flags and backend.
 //!
-//! Cranelift is the development default, chosen by the `[profile.dev]` key in
-//! `.cargo/config.toml`, so it is never a `rustflags` entry. Development-only
+//! LLVM is the development default; the Cranelift `[profile.dev]` key in
+//! `.cargo/config.toml` is commented out and is never a `rustflags` entry. Development-only
 //! rustflags stay in the generic Linux source, and the Make release route
 //! assigns `RUSTFLAGS` so none of them reach a release build, which keeps the
 //! LLVM backend.
@@ -56,7 +56,7 @@ fn development_flags_are_scoped_to_every_linux_target() {
     }
     assert!(
         tables_with_rustflag(CARGO_CONFIG, "-Zcodegen-backend=cranelift").is_empty(),
-        "the backend is chosen by the dev profile key, not by a rustflags entry"
+        "the backend defaults to LLVM; an opt-in uses the dev profile key"
     );
 }
 

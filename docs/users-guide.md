@@ -84,9 +84,9 @@ available. Use `make build` and `make test` for the standard development route.
 Before the first local build, run `make install-build-tools` to install the
 pinned Rust toolchain and linker tools for native Linux x86_64 and aarch64
 development routes. On supported Linux hosts, the development build
-(`make build`), tests (`make test`), lint, and typecheck use rustc's Cranelift
-backend, the nightly `-Zthreads=8` frontend, and the pinned `mold` linker.
-Release builds and coverage keep the LLVM backend; Whitaker runs on LLVM too.
+(`make build`), tests (`make test`), lint, and typecheck use rustc's default
+LLVM backend, the nightly `-Zthreads=8` frontend, and the pinned `mold` linker.
+Release builds, coverage and Whitaker use LLVM too.
 
 The Linux Cargo configuration requires the pinned `mold` binary and the
 `evert-clang-mold` wrapper. Run `make install-build-tools` before the first
