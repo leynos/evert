@@ -122,7 +122,6 @@ _MUTATIONS: dict[str, cabc.Callable[[_Scenario], None]] = {
     "remove-lint": _remove_lint,
     "conditional-lint": _set_lint_key("if", value="runner.os == 'Linux'"),
     "soft-fail-lint": _set_lint_key("continue-on-error", value=True),
-    "cranelift-mismatch": _set_action_input("cranelift", "false"),
 }
 
 
@@ -168,9 +167,6 @@ _MUTATIONS: dict[str, cabc.Callable[[_Scenario], None]] = {
             "soft-fail-lint",
             "make lint must not continue on error",
             id="soft-failing-lint",
-        ),
-        pytest.param(
-            "cranelift-mismatch", "cranelift input must match", id="backend-mismatch"
         ),
     ],
 )

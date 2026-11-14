@@ -126,6 +126,37 @@ def test_cranelift_selection_uses_parsed_configuration(
 
 
 @pytest.mark.parametrize(
+    ("expected_cranelift", "cranelift_input", "violated"),
+    [
+        pytest.param(True, "true", False, id="selected-and-provisioned"),
+        pytest.param(True, "false", True, id="selected-but-not-provisioned"),
+        pytest.param(True, None, True, id="selected-and-input-absent"),
+        pytest.param(False, "true", False, id="opt-in-component-kept"),
+        pytest.param(False, "false", False, id="opt-in-component-dropped"),
+        pytest.param(False, None, False, id="input-absent-without-selection"),
+    ],
+)
+def test_cranelift_input_is_required_only_while_cranelift_is_selected(
+    *, expected_cranelift: bool, cranelift_input: str | None, violated: bool
+) -> None:
+    """Require the input only while selected; it is optional once opt-in."""
+    inputs = {} if cranelift_input is None else {"cranelift": cranelift_input}
+    action: Step = {"uses": ACTION_USE, "with": inputs}
+
+    violations = lint_job_action_violations(
+        "ci.yml",
+        _LintJobContext(
+            job_steps=[action, {"run": "make lint"}],
+            lint_indices=[1],
+            route_name="make lint",
+            expected_cranelift=expected_cranelift,
+        ),
+    )
+
+    assert bool(violations) is violated, violations
+
+
+@pytest.mark.parametrize(
     ("action_position", "action_count", "lint_indices", "expected"),
     [
         pytest.param(0, 0, [0], [], id="no-actions"),

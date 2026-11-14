@@ -268,7 +268,7 @@ def _action_input_violations(
     *,
     expected_cranelift: bool | None,
 ) -> list[str]:
-    """Reject forbidden action inputs and a Cranelift choice that drifts."""
+    """Reject forbidden action inputs and a missing Cranelift component."""
     violations = [
         f"{where} Whitaker action must not set {forbidden}"
         for forbidden in sorted(FORBIDDEN_INPUTS.intersection(inputs))
@@ -276,10 +276,13 @@ def _action_input_violations(
     selected = _boolean_input(inputs.get("cranelift", False))
     if expected_cranelift is None:
         violations.append("cannot determine the Linux development Cranelift default")
-    elif selected is not expected_cranelift:
+    elif expected_cranelift and selected is not True:
         violations.append(
-            "Whitaker action cranelift input must match the Linux development default"
+            "Whitaker action cranelift input must be true while the Linux "
+            "development default selects Cranelift"
         )
+    elif selected is None:
+        violations.append("Whitaker action cranelift input must be a boolean")
     return violations
 
 
