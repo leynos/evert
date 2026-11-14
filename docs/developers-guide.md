@@ -513,26 +513,24 @@ isolation boundary rather than as a gate build that lost the fast flags.
 
 ### Cranelift backend support
 
-Cranelift is the development backend, selected by `[profile.dev]` in
-`.cargo/config.toml` (with `[unstable] codegen-backend = true`) and installed
-through the `rustc-codegen-cranelift-preview` component in
-`rust-toolchain.toml`. The full suite passes under it, measured on
-`nightly-2026-11-12` on 2026-11-13 with
-`cargo nextest run --workspace --all-targets --all-features --no-fail-fast`
-and, for the doctest, `cargo test --doc --workspace --all-features`: all tests
-passed.
+The estate standard is LLVM, so LLVM is the default backend here. The Cranelift
+selection in `.cargo/config.toml` is commented out; the
+`[unstable] codegen-backend = true` key and the
+`rustc-codegen-cranelift-preview` component in `rust-toolchain.toml` stay for
+an opt-in. See the
+[concordat decision record](https://github.com/leynos/concordat/blob/main/docs/adrs/adr-0004-cranelift-is-not-part-of-the-rust-build-standard.md),
+with review due 14 May 2027. An inherited `CARGO_PROFILE_*_CODEGEN_BACKEND`
+variable can still select Cranelift.
 
-Everything else selects LLVM. The release profile never reads the dev key, and
-`make release` and the release workflow build on the pinned nightly, so they
-keep LLVM. `make coverage` and the coverage workflows set
+`make coverage` and the coverage workflows set
 `CARGO_PROFILE_DEV_CODEGEN_BACKEND=llvm` because `-Cinstrument-coverage` is
 LLVM-only. `make lint-whitaker` runs the installer-managed `whitaker` with
 `CARGO_PROFILE_DEV_CODEGEN_BACKEND=llvm`, and CI installs Whitaker with
 `cranelift: true`.
 
-The Cranelift component does not unwind, so a test must not rely on a caught
-panic: assert on a returned error instead. The earlier `catch_unwind` and
-joined-thread probes were removed on 2026-11-13 (see the superseded plan in
+The Cranelift component does not unwind, so no test may rely on a caught panic
+under an opt-in: assert on a returned error instead. The earlier `catch_unwind`
+and joined-thread probes were removed on 2026-11-13 (see the superseded plan in
 `docs/debugging/`); they checked the toolchain, not the product. The
 [tracking issue #80](https://github.com/leynos/evert/issues/80) can close.
 

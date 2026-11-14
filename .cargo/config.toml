@@ -11,7 +11,8 @@ rustflags = ["-Zthreads=8", "-Clinker=evert-clang-mold", "-Clink-arg=-fuse-ld=mo
 embed-metadata = false
 codegen-backend = true
 
-# Cranelift is the development default. Only the dev profile selects it, so
-# release builds keep LLVM; coverage and Whitaker select LLVM explicitly.
-[profile.dev]
-codegen-backend = "cranelift"
+# Development builds use LLVM, the estate standard.
+# Cranelift disabled estate-wide on 14 November 2026 (concordat ADR; review 14 May 2027). Uncomment to opt back in.
+# [profile.dev]
+# codegen-backend = "cranelift"
+# One-off opt-in: --config 'profile.dev.codegen-backend="cranelift"'

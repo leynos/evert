@@ -130,12 +130,12 @@ TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --managed-python \
 
 # The development build standard (concordat rule `rust-build-defaults`):
 # On a supported GNU/Linux host, parallel rustc and `mold` apply to the
-# matching native x86_64 or aarch64 target; rustc uses Cranelift for development.
+# matching native x86_64 or aarch64 target; rustc uses LLVM, the estate standard.
 # Route each Cargo command by its effective target. A sole exact native
 # --target takes precedence; commands without it follow CARGO_BUILD_TARGET.
 # Assigned RUSTFLAGS replace Cargo's target table, so each route restates the
-# standard flags. The development profile selects Cranelift through
-# .cargo/config.toml; coverage, release and Whitaker select LLVM explicitly.
+# standard flags. The Cranelift selection in .cargo/config.toml is disabled;
+# coverage, release and Whitaker select LLVM explicitly.
 BUILD_HOST_OS := $(shell uname -s)
 BUILD_HOST_ARCH := $(shell uname -m)
 NATIVE_CARGO_TARGET := $(if $(filter x86_64 aarch64,$(BUILD_HOST_ARCH)),$(BUILD_HOST_ARCH)-unknown-linux-gnu,)

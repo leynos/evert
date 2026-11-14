@@ -1,7 +1,7 @@
 //! Checks how the repository selects its development flags and backend.
 //!
-//! Cranelift is the development default, chosen by the `[profile.dev]` key in
-//! `.cargo/config.toml`, so it is never a `rustflags` entry. Development-only
+//! LLVM is the development default; the Cranelift `[profile.dev]` key in
+//! `.cargo/config.toml` is commented out and is never a `rustflags` entry. Development-only
 //! rustflags stay in the generic Linux source, and the Make release route
 //! assigns `RUSTFLAGS` so none of them reach a release build, which keeps the
 //! LLVM backend.
