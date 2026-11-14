@@ -252,6 +252,17 @@ def development_cranelift_default(config: object) -> bool | None:
     return "-Zcodegen-backend=cranelift" in flags
 
 
+def _boolean_input(value: object) -> bool | None:
+    """Read YAML booleans and quoted GitHub action boolean inputs."""
+    match value:
+        case bool():
+            return value
+        case str():
+            return {"true": True, "false": False}.get(value.casefold())
+        case _:
+            return None
+
+
 def _action_input_violations(
     where: str,
     inputs: dict[object, object],
@@ -263,9 +274,12 @@ def _action_input_violations(
         f"{where} Whitaker action must not set {forbidden}"
         for forbidden in sorted(FORBIDDEN_INPUTS.intersection(inputs))
     ]
+    selected = _boolean_input(inputs.get("cranelift", False))
     return [
         *violations,
-        *cranelift_input_violations(inputs, expected_cranelift=expected_cranelift),
+        *cranelift_input_violations(
+            selected=selected, expected_cranelift=expected_cranelift
+        ),
     ]
 
 
