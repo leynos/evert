@@ -66,9 +66,11 @@ the deferral surfaces for removal instead of rotting silently in the codebase.
 `clippy.toml` carries the numeric thresholds behind the baseline (cognitive
 complexity, argument count, function length, nesting depth) and the
 `disallowed-methods` list that blocks direct `std::env::var`/`var_os`/`vars`/
-`vars_os`/`set_var`/`remove_var` calls. Each disallowed method's `reason` tells
-the contributor what to do instead: inject an environment reader in production
-code, or use a stub environment in tests.
+`vars_os`/`set_var`/`remove_var`/`set_current_dir` calls. Each disallowed
+method's `reason` tells the contributor what to do instead: inject an
+environment reader in production code, use a stub environment in tests, and
+pass a directory in (or use `Command::current_dir` for a child process) rather
+than changing the process's working directory.
 
 The pinned nightly toolchain in `rust-toolchain.toml` supplies the `rustfmt`,
 `clippy`, and `rust-analyzer` components the baseline and this workflow depend
