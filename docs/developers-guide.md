@@ -513,6 +513,14 @@ isolation boundary rather than as a gate build that lost the fast flags.
 `tests/makefile_contract.rs` holds the boundary
 (`whitaker_does_not_inherit_development_flags`).
 
+Whitaker also gates cognitive complexity. Clippy's `cognitive_complexity`
+scores code after macro expansion, so it counts branching a macro generated,
+and neither `Cargo.toml` nor `clippy.toml` enables it. Whitaker's experimental
+`macro_aware_cognitive_complexity` gates it at `max_complexity = 9`,
+CodeScene's ceiling. `dylint.toml` opts in with
+`[whitaker] experimental = ["macro_aware_cognitive_complexity"]`. Fix a finding
+by extracting named helpers, never by raising the threshold.
+
 ### Cranelift backend support
 
 The estate standard is LLVM, so LLVM is the default backend here. The Cranelift
