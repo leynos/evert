@@ -214,14 +214,15 @@ source roots, or if CI stops running `make typecheck`.
 `make all` and `make markdownlint` enforce en-GB-oxendict spelling by running
 `make spelling`, which invokes the `typos-config-builder` gate pinned by the
 release tag in `TYPOS_CONFIG_BUILDER_VERSION` in the `Makefile` (`v0.1.4`), as
-the concordat spelling baseline requires. The gate keeps working during a
-GitHub outage through its offline snapshot fallback. The gate regenerates
+the concordat spelling baseline requires. A cold run fetches the tag from
+GitHub before the gate starts; once the builder is cached, the gate's offline
+snapshot fallback keeps it working during an outage. The gate regenerates
 `typos.toml` from the live shared dictionary and this repository's overlay on
-every run. It runs Typos across tracked files in
-`scope all`; a separate phrase stage checks eligible tracked text files for
-multi-word corrections that single-word spelling checks cannot express. The
-builder requires CPython 3.14 or newer, so `make spelling` passes
-`--python 3.14` and `uv` fetches that interpreter when the host lacks one.
+every run. It runs Typos across tracked files in `scope all`; a separate phrase
+stage checks eligible tracked text files for multi-word corrections that
+single-word spelling checks cannot express. The builder requires CPython 3.14
+or newer, so `make spelling` passes `--python 3.14` and `uv` fetches that
+interpreter when the host lacks one.
 
 The shared dictionary is maintained in `leynos/agent-helper-scripts` and is
 fetched by the gate; `typos.toml` is a generated artefact, so CI never

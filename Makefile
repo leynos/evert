@@ -119,8 +119,9 @@ CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --managed-python \
 	cv005-contracts
 
 # Pinned by release tag: the concordat `spelling-config-baseline` rule requires
-# the builder at a release tag (here v0.1.4). A tag fetches on each cold run, so
-# the gate's offline snapshot fallback covers a GitHub outage.
+# the builder at a release tag (here v0.1.4). A cold run must fetch the tag from
+# GitHub before the gate starts; the gate's offline snapshot fallback covers an
+# outage only once the builder is cached.
 TYPOS_CONFIG_BUILDER_VERSION ?= v0.1.4
 TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --managed-python \
 	--python $(PYTHON_BASELINE) --from \
