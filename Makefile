@@ -118,14 +118,12 @@ CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --managed-python \
 	--from 'git+https://github.com/leynos/shared-actions@$(CV005_CONTRACTS_REF)\#subdirectory=packages/cv005-contracts' \
 	cv005-contracts
 
-# Pinned by commit, not by tag: uv resolves a commit from its cache without the
-# network, so the spelling gate keeps working offline (a tag forces a fetch on
-# every run and fails whenever GitHub is unreachable), and a moved tag cannot
-# change what runs. This is the commit of the v0.1.3 release.
-TYPOS_CONFIG_BUILDER_REF ?= c8a4f95d7cf7f6a1b7517f2775d122d47d5721eb
+# Pinned by release tag: the concordat `spelling-config-baseline` rule requires
+# the builder at a release tag (here v0.1.4), not a commit.
+TYPOS_CONFIG_BUILDER_VERSION ?= v0.1.4
 TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --managed-python \
 	--python $(PYTHON_BASELINE) --from \
-	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_REF)" \
+	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_VERSION)" \
 	typos-config-builder
 
 # The development build standard (concordat rule `rust-build-defaults`):
