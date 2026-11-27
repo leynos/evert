@@ -247,7 +247,7 @@ interrogate: ## Enforce complete Python docstring coverage
 	    exit 1; \
 	  fi
 
-lint: interrogate lint-clippy lint-whitaker lint-python ## Run docstring, Rust, and Python gates with warnings denied
+lint: interrogate lint-clippy lint-whitaker lint-python yamllint actionlint ## Run docstring, Rust, and Python gates with warnings denied
 
 # Keep Whitaker on the Clippy route's explicit prerequisite edge so `make -j`
 # cannot overlap the two compiler gates.
@@ -340,3 +340,18 @@ install-build-tools: ## Install the pinned nightly and linker binary
 
 check-build-tools: ## Check the development compiler and linker prerequisites
 	@scripts/check-build-tools.sh
+
+YAMLLINT ?= yamllint
+ACTIONLINT ?= actionlint
+
+.PHONY: yamllint actionlint
+
+# yamllint reads `.yamllint.yml`, which extends `.yamllint-estate.yml`, and
+# resolves that path against the current directory, so run it from the root.
+yamllint: SHELL := bash
+yamllint: .SHELLFLAGS := -eo pipefail -c
+yamllint: ## Lint every tracked YAML file strictly
+	git ls-files -z '*.yml' '*.yaml' | xargs -0 -r $(YAMLLINT) --strict --
+
+actionlint: ## Lint the GitHub Actions workflows, including their shell scripts
+	$(ACTIONLINT)
